@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "movie-app",
-    "slug": "movie-app",
+    "name": "chat-app",
+    "slug": "chat-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/logo.png",
     "scheme": "movieapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -33,10 +33,19 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
+      ],
+      "expo-secure-store",
+      [
+        "react-native-fbsdk-next",
+        {
+          "appID": "YOUR_FACEBOOK_APP_ID",
+          "displayName": "YOUR_APP_DISPLAY_NAME"
+        }
       ]
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "assetBundlePatterns": ["assets/fonts/*"]
   }
 }

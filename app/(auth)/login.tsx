@@ -1,0 +1,238 @@
+import { images } from "@/constants/images";
+import { Link } from "expo-router";
+import { Formik } from "formik";
+import React, { useEffect, useRef } from "react";
+import {
+  ActivityIndicator,
+  Animated,
+  Dimensions,
+  Image,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import Svg, { Path } from "react-native-svg";
+import * as Yup from "yup";
+import { login as loginApi } from "../../api/authApi";
+
+const LoginSchema = Yup.object().shape({
+  phone: Yup.string()
+    .required("Vui lòng nhập số điện thoại")
+    .matches(/^\d{9,11}$/, "Số điện thoại không hợp lệ"),
+  password: Yup.string()
+    .min(6, "Mật khẩu tối thiểu 6 ký tự")
+    .required("Vui lòng nhập mật khẩu"),
+});
+
+const LoginScreen = () => {
+  const { width } = Dimensions.get("window");
+  const height = 150; // Tùy chỉnh theo thiết kế
+  const translateY = useRef(new Animated.Value(-50)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(translateY, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
+  return (
+    <SafeAreaView className="flex-1 bg-white relative">
+      {/* Wave Header */}
+      <View className="absolute top-0 left-0 right-0 z-0">
+        <Animated.View
+          style={{
+            transform: [{ translateY }],
+            opacity,
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 0,
+          }}
+        >
+          <Svg
+            width="100%"
+            height={height}
+            viewBox={`0 0 ${width} ${height}`}
+            preserveAspectRatio="none"
+          >
+            <Path
+              fill="#a855f7"
+              d={`M0,${height * 0.5} C${width * 0.25},${height * 1.2} ${
+                width * 0.75
+              },0 ${width},${height * 0.5} L${width},0 L0,0 Z`}
+            />
+          </Svg>
+        </Animated.View>
+      </View>
+
+      {/* Content */}
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1 }}
+        className="z-10 px-8 pt-36"
+      >
+        <Text className="text-3xl font-bold mb-2 font-manrope">Hi!</Text>
+        <Text className="text-gray-600 mb-6 font-nunito">
+          Đăng nhập tài khoản để sử dụng ứng dụng
+        </Text>
+
+        <Formik
+          initialValues={{ phone: "", password: "" }}
+          validationSchema={LoginSchema}
+          onSubmit={async (values, { setSubmitting, setStatus }) => {
+            setStatus("");
+            try {
+              await loginApi(values.phone, values.password);
+              // TODO: Xử lý chuyển trang hoặc lưu token sau khi đăng nhập thành công
+            } catch (err: any) {
+              setStatus(err?.response?.data?.message || "Đăng nhập thất bại");
+            } finally {
+              setSubmitting(false);
+            }
+          }}
+        >
+          {({
+            handleChange,
+            handleBlur,
+            handleSubmit,
+            values,
+            errors,
+            touched,
+            isSubmitting,
+            status,
+          }) => (
+            <>
+              <Text className="mb-2 font-nunito">Số điện thoại</Text>
+              <TextInput
+                placeholder="Số điện thoại"
+                placeholderTextColor="#888"
+                className="bg-[#F0E5FE] px-4 py-3 rounded-md mb-4"
+                value={values.phone}
+                onChangeText={handleChange("phone")}
+                onBlur={handleBlur("phone")}
+                keyboardType="phone-pad"
+              />
+              {touched.phone && errors.phone && (
+                <Text style={{ color: "red", marginBottom: 8 }}>
+                  {errors.phone}
+                </Text>
+              )}
+
+              <Text className="mb-2 font-nunito">Mật khẩu</Text>
+              <TextInput
+                placeholder="******"
+                placeholderTextColor="#888"
+                secureTextEntry
+                className="bg-[#F0E5FE] px-4 py-3 rounded-md mb-6"
+                value={values.password}
+                onChangeText={handleChange("password")}
+                onBlur={handleBlur("password")}
+              />
+              {touched.password && errors.password && (
+                <Text style={{ color: "red", marginBottom: 8 }}>
+                  {errors.password}
+                </Text>
+              )}
+
+              {status ? (
+                <Text style={{ color: "red", marginBottom: 8 }}>{status}</Text>
+              ) : null}
+
+              <TouchableOpacity
+                className="bg-[#a855f7] py-3 rounded-md mb-4"
+                onPress={handleSubmit as any}
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text className="text-center font-semibold text-base text-white ">
+                    Đăng nhập
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </>
+          )}
+        </Formik>
+
+        <View className="flex-row items-center my-4">
+          <View className="flex-1 h-px bg-gray-300" />
+          <Text className="mx-4 text-gray-500 text-sm">hoặc</Text>
+          <View className="flex-1 h-px bg-gray-300" />
+        </View>
+        {/* Social Login Buttons */}
+        <View className="flex flex-row justify-center">
+          <View className="mb-4 flex flex-row items-center justify-between w-2/3">
+            <TouchableOpacity
+              className="flex flex-row items-center justify-center bg-white border border-gray-200 rounded-md py-2 "
+              onPress={() => {
+                /* TODO: Google login */
+              }}
+            >
+              <Image
+                source={images.google}
+                style={{ width: 32, height: 32, marginHorizontal: 8 }}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity
+              className="flex flex-row items-center justify-center bg-white border border-gray-200 rounded-md py-2 "
+              onPress={() => {
+                /* TODO: Facebook login */
+              }}
+            >
+              <Image
+                source={images.facebook}
+                style={{ width: 32, height: 32, marginHorizontal: 8 }}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity
+              className="flex flex-row items-center justify-center bg-white border border-gray-200 rounded-md py-2"
+              onPress={() => {
+                /* TODO: GitHub login */
+              }}
+            >
+              <Image
+                source={images.github}
+                style={{ width: 32, height: 32, marginHorizontal: 8 }}
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
+        <Text className="text-center font-nunito">
+          Chưa có tài khoản?{" "}
+          <Link href="/(auth)/register">
+            <Text className="text-pink-400 font-semibold">Đăng ký</Text>
+          </Link>
+        </Text>
+
+        <View className="flex items-center mt-10">
+          <Image
+            source={{
+              uri: "https://cdn.dribbble.com/assets/dribbble-ball-192-ec064e9ed4c04700a4ab65c0c2bffeb4e9cfb3e30cd6ed898a07e3b2c0f2c3c2.png",
+            }}
+            className="w-20 h-20"
+            resizeMode="contain"
+          />
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+};
+
+export default LoginScreen;
+
+const styles = StyleSheet.create({});
