@@ -1,5 +1,6 @@
 import { images } from "@/constants/images";
-import { Link } from "expo-router";
+import { saveAccount } from "@/utils/secureStore";
+import { Link, router } from "expo-router";
 import { Formik } from "formik";
 import React, { useEffect, useRef } from "react";
 import {
@@ -26,6 +27,7 @@ const RegisterSchema = Yup.object().shape({
     .matches(/^\d{9,11}$/, "Số điện thoại không hợp lệ"),
   password: Yup.string()
     .min(6, "Mật khẩu tối thiểu 6 ký tự")
+    .matches(/[A-Z]/, "Mật khẩu phải có ít nhất 1 chữ in hoa")
     .required("Vui lòng nhập mật khẩu"),
   confirmPassword: Yup.string()
     .oneOf([Yup.ref("password")], "Mật khẩu xác nhận không khớp")
@@ -113,14 +115,22 @@ const RegisterScreen = () => {
             try {
               const deviceInfo = await getDeviceInfo();
               console.log("Device Info:", deviceInfo);
-              const res = await registerApi(
+              const response = await registerApi(
                 phoneNumber,
                 values.password,
                 values.fullName,
                 values.confirmPassword,
                 deviceInfo
               );
-              console.log("Register API response:", res);
+              // Lưu thông tin tài khoản vào SecureStore
+              await saveAccount({
+                token: response.token,
+                user: response.user,
+                phoneNumber: phoneNumber,
+              });
+
+              // Chuyển trang đến màn hình chính
+              router.replace("/(tabs)");
               // TODO: Chuyển sang màn hình đăng nhập hoặc tự động đăng nhập
             } catch (err: any) {
               const error = err as any;

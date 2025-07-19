@@ -1,5 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import React from "react";
+import React, { useState } from "react";
 import { Image, Text, TouchableOpacity, View } from "react-native";
 
 interface ContactCardProps {
@@ -33,17 +33,28 @@ const ContactCard: React.FC<ContactCardProps> = ({
   showLastMessage = false,
   className = "",
 }) => {
+  const [imageError, setImageError] = useState(false);
+
   return (
     <TouchableOpacity
       className={`flex-row items-center px-6 py-4 border-b border-gray-100 ${className}`}
       onPress={() => onPress(contact.id)}
     >
       <View className="relative">
-        <Image
-          source={{ uri: contact.avatar }}
-          className="w-14 h-14 rounded-full"
-          resizeMode="cover"
-        />
+        {!imageError ? (
+          <Image
+            source={{ uri: contact.avatar }}
+            className="w-14 h-14 rounded-full"
+            resizeMode="cover"
+            onError={() => setImageError(true)}
+          />
+        ) : (
+          <View className="w-14 h-14 rounded-full bg-gray-300 flex items-center justify-center">
+            <Text className="text-gray-600 font-bold text-lg">
+              {contact.name.charAt(0).toUpperCase()}
+            </Text>
+          </View>
+        )}
         {contact.online && (
           <View className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-white"></View>
         )}

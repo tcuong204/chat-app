@@ -1,5 +1,5 @@
 import AntDesign from "@expo/vector-icons/AntDesign";
-import React, { useRef } from "react";
+import React, { useRef, useState } from "react";
 import { Animated, Image, Text, TouchableOpacity, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 
@@ -37,6 +37,7 @@ const MessageCard: React.FC<MessageCardProps> = ({
   openSwipeRef,
 }) => {
   const pressStart = useRef(0);
+  const [imageError, setImageError] = useState(false);
 
   const renderRightActions = (progress: any, dragX: any) => {
     const transDelete = dragX.interpolate({
@@ -143,11 +144,20 @@ const MessageCard: React.FC<MessageCardProps> = ({
         disabled={isSwipingId === chat.id}
       >
         <View className="relative">
-          <Image
-            source={{ uri: chat.avatar }}
-            className="w-14 h-14 rounded-full"
-            resizeMode="cover"
-          />
+          {!imageError ? (
+            <Image
+              source={{ uri: chat.avatar }}
+              className="w-14 h-14 rounded-full"
+              resizeMode="cover"
+              onError={() => setImageError(true)}
+            />
+          ) : (
+            <View className="w-14 h-14 rounded-full bg-gray-300 flex items-center justify-center">
+              <Text className="text-gray-600 font-bold text-lg">
+                {chat.name.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+          )}
           {chat.online && (
             <View className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-white"></View>
           )}

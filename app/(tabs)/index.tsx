@@ -33,8 +33,7 @@ export default function Index() {
       name: "Larry Machigo",
       lastMessage: "Ok, Let me check",
       time: "09:38 AM",
-      avatar:
-        "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=60&h=60&fit=crop&crop=face",
+      avatar: "https://i.pravatar.cc/150?img=1",
       online: true,
       pinned: true,
     },
@@ -43,8 +42,7 @@ export default function Index() {
       name: "Natalie Nora",
       lastMessage: "Natalie is typing...",
       time: "09:04 AM",
-      avatar:
-        "https://images.unsplash.com/photo-1494790108755-2616b612b786?w=60&h=60&fit=crop&crop=face",
+      avatar: "https://i.pravatar.cc/150?img=2",
       online: true,
       typing: true,
     },
@@ -53,8 +51,7 @@ export default function Index() {
       name: "Jennifer Jones",
       lastMessage: "Voice message",
       time: "Yesterday",
-      avatar:
-        "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=60&h=60&fit=crop&crop=face",
+      avatar: "https://i.pravatar.cc/150?img=3",
       online: false,
       hasVoice: true,
     },
@@ -63,8 +60,7 @@ export default function Index() {
       name: "Larry Machigo",
       lastMessage: "See you tomorrow, take...",
       time: "26 MAY",
-      avatar:
-        "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=60&h=60&fit=crop&crop=face",
+      avatar: "https://i.pravatar.cc/150?img=1",
       online: false,
     },
     {
@@ -72,8 +68,7 @@ export default function Index() {
       name: "Sofia",
       lastMessage: "Oh... thank you so...",
       time: "12 Jun",
-      avatar:
-        "https://images.unsplash.com/photo-1489424731084-a5d8b219a5bb?w=60&h=60&fit=crop&crop=face",
+      avatar: "https://i.pravatar.cc/150?img=4",
       online: false,
     },
     {
@@ -81,8 +76,7 @@ export default function Index() {
       name: "Haider Lye",
       lastMessage: "👍 Sticker",
       time: "",
-      avatar:
-        "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=60&h=60&fit=crop&crop=face",
+      avatar: "https://i.pravatar.cc/150?img=5",
       online: false,
     },
     {
@@ -90,8 +84,7 @@ export default function Index() {
       name: "Mr. elon",
       lastMessage: "Cool :))",
       time: "",
-      avatar:
-        "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=60&h=60&fit=crop&crop=face",
+      avatar: "https://i.pravatar.cc/150?img=6",
       online: false,
     },
   ];
@@ -101,64 +94,56 @@ export default function Index() {
     {
       id: 1,
       name: "Larry Machigo",
-      avatar:
-        "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=60&h=60&fit=crop&crop=face",
+      avatar: "https://i.pravatar.cc/150?img=1",
       type: "contact" as const,
       online: true,
     },
     {
       id: 2,
       name: "Natalie Nora",
-      avatar:
-        "https://images.unsplash.com/photo-1494790108755-2616b612b786?w=60&h=60&fit=crop&crop=face",
+      avatar: "https://i.pravatar.cc/150?img=2",
       type: "contact" as const,
       online: true,
     },
     {
       id: 3,
       name: "Jennifer Jones",
-      avatar:
-        "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=60&h=60&fit=crop&crop=face",
+      avatar: "https://i.pravatar.cc/150?img=3",
       type: "contact" as const,
       online: false,
     },
     {
       id: 4,
       name: "Sofia",
-      avatar:
-        "https://images.unsplash.com/photo-1489424731084-a5d8b219a5bb?w=60&h=60&fit=crop&crop=face",
+      avatar: "https://i.pravatar.cc/150?img=4",
       type: "contact" as const,
       online: false,
     },
     {
       id: 5,
       name: "Haider Lye",
-      avatar:
-        "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=60&h=60&fit=crop&crop=face",
+      avatar: "https://i.pravatar.cc/150?img=5",
       type: "contact" as const,
       online: false,
     },
     {
       id: 6,
       name: "Mr. elon",
-      avatar:
-        "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=60&h=60&fit=crop&crop=face",
+      avatar: "https://i.pravatar.cc/150?img=6",
       type: "contact" as const,
       online: false,
     },
     {
       id: 7,
       name: "Family Group",
-      avatar:
-        "https://images.unsplash.com/photo-1518837695005-2083093ee35b?w=60&h=60&fit=crop&crop=face",
+      avatar: "https://i.pravatar.cc/150?img=7",
       type: "group" as const,
       members: 8,
     },
     {
       id: 8,
       name: "Work Team",
-      avatar:
-        "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=60&h=60&fit=crop&crop=face",
+      avatar: "https://i.pravatar.cc/150?img=8",
       type: "group" as const,
       members: 12,
     },

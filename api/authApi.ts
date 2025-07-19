@@ -34,12 +34,12 @@ export async function getDeviceInfo() {
 
 // Đăng nhập
 export const login = async (
-  phone: string,
+  phoneNumber: string,
   password: string,
   deviceInfo?: any
 ) => {
   const response = await axiosInstance.post("/auth/login", {
-    phone,
+    phoneNumber,
     password,
     deviceInfo,
   });

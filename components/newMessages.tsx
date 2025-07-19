@@ -1,5 +1,5 @@
 import AntDesign from "@expo/vector-icons/AntDesign";
-import React from "react";
+import React, { useState } from "react";
 import {
   FlatList,
   Image,
@@ -38,6 +38,14 @@ const NewMessageModal: React.FC<NewMessageModalProps> = ({
   onSearchChange,
   onContactPress,
 }) => {
+  const [imageErrors, setImageErrors] = useState<{ [key: number]: boolean }>(
+    {}
+  );
+
+  const handleImageError = (contactId: number) => {
+    setImageErrors((prev) => ({ ...prev, [contactId]: true }));
+  };
+
   const filteredContacts = contacts.filter((contact) =>
     contact.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -94,10 +102,19 @@ const NewMessageModal: React.FC<NewMessageModalProps> = ({
                       onPress={() => onContactPress(contact.id)}
                     >
                       <View className="relative">
-                        <Image
-                          source={{ uri: contact.avatar }}
-                          className="w-16 h-16 rounded-full"
-                        />
+                        {!imageErrors[contact.id] ? (
+                          <Image
+                            source={{ uri: contact.avatar }}
+                            className="w-16 h-16 rounded-full"
+                            onError={() => handleImageError(contact.id)}
+                          />
+                        ) : (
+                          <View className="w-16 h-16 rounded-full bg-gray-300 flex items-center justify-center">
+                            <Text className="text-gray-600 font-bold text-xl">
+                              {contact.name.charAt(0).toUpperCase()}
+                            </Text>
+                          </View>
+                        )}
                         {contact.type === "contact" && contact.online && (
                           <View className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-white"></View>
                         )}

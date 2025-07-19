@@ -101,8 +101,7 @@ const MovieDetails = () => {
               </TouchableOpacity>
               <View className="flex flex-row">
                 <Image
-                  src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=40&h=40&fit=crop&crop=face"
-                  alt="Larry"
+                  source={{ uri: "https://i.pravatar.cc/150?img=1" }}
                   className="w-10 h-10 rounded-full mr-3"
                 />
                 <View>

@@ -1,5 +1,5 @@
 import { images } from "@/constants/images";
-import { Link } from "expo-router";
+import { Link, router } from "expo-router";
 import { Formik } from "formik";
 import React, { useEffect, useRef } from "react";
 import {
@@ -17,14 +17,16 @@ import {
 } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import * as Yup from "yup";
-import { login as loginApi } from "../../api/authApi";
+import { getDeviceInfo, login as loginApi } from "../../api/authApi";
+import { saveAccount } from "../../utils/secureStore";
 
 const LoginSchema = Yup.object().shape({
-  phone: Yup.string()
+  phoneNumber: Yup.string()
     .required("Vui lòng nhập số điện thoại")
     .matches(/^\d{9,11}$/, "Số điện thoại không hợp lệ"),
   password: Yup.string()
     .min(6, "Mật khẩu tối thiểu 6 ký tự")
+    .matches(/[A-Z]/, "Mật khẩu phải có ít nhất 1 chữ in hoa")
     .required("Vui lòng nhập mật khẩu"),
 });
 
@@ -91,13 +93,37 @@ const LoginScreen = () => {
         </Text>
 
         <Formik
-          initialValues={{ phone: "", password: "" }}
+          initialValues={{ phoneNumber: "", password: "" }}
           validationSchema={LoginSchema}
           onSubmit={async (values, { setSubmitting, setStatus }) => {
             setStatus("");
             try {
-              await loginApi(values.phone, values.password);
-              // TODO: Xử lý chuyển trang hoặc lưu token sau khi đăng nhập thành công
+              // Chuyển đổi số điện thoại sang định dạng +84
+              let formattedPhoneNumber = values.phoneNumber;
+              if (formattedPhoneNumber.startsWith("0")) {
+                formattedPhoneNumber =
+                  "+84" + formattedPhoneNumber.substring(1);
+              } else if (!formattedPhoneNumber.startsWith("+84")) {
+                formattedPhoneNumber = "+84" + formattedPhoneNumber;
+              }
+
+              const deviceInfo = await getDeviceInfo();
+              const response = await loginApi(
+                formattedPhoneNumber,
+                values.password,
+                deviceInfo
+              );
+              console.log(response);
+
+              // Lưu thông tin tài khoản vào SecureStore
+              await saveAccount({
+                token: response.token,
+                user: response.user,
+                phoneNumber: formattedPhoneNumber,
+              });
+
+              // Chuyển trang đến màn hình chính
+              router.replace("/(tabs)");
             } catch (err: any) {
               setStatus(err?.response?.data?.message || "Đăng nhập thất bại");
             } finally {
@@ -121,14 +147,14 @@ const LoginScreen = () => {
                 placeholder="Số điện thoại"
                 placeholderTextColor="#888"
                 className="bg-[#F0E5FE] px-4 py-3 rounded-md mb-4"
-                value={values.phone}
-                onChangeText={handleChange("phone")}
-                onBlur={handleBlur("phone")}
+                value={values.phoneNumber}
+                onChangeText={handleChange("phoneNumber")}
+                onBlur={handleBlur("phoneNumber")}
                 keyboardType="phone-pad"
               />
-              {touched.phone && errors.phone && (
+              {touched.phoneNumber && errors.phoneNumber && (
                 <Text style={{ color: "red", marginBottom: 8 }}>
-                  {errors.phone}
+                  {errors.phoneNumber}
                 </Text>
               )}
 

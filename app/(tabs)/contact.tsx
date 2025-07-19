@@ -16,8 +16,7 @@ const ContactScreen = () => {
       id: 1,
       name: "Larry Machigo",
       phone: "+84 123 456 789",
-      avatar:
-        "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=60&h=60&fit=crop&crop=face",
+      avatar: "https://i.pravatar.cc/150?img=1",
       online: true,
       favorite: true,
     },
@@ -25,8 +24,7 @@ const ContactScreen = () => {
       id: 2,
       name: "Natalie Nora",
       phone: "+84 987 654 321",
-      avatar:
-        "https://images.unsplash.com/photo-1494790108755-2616b612b786?w=60&h=60&fit=crop&crop=face",
+      avatar: "https://i.pravatar.cc/150?img=2",
       online: true,
       favorite: false,
     },
@@ -34,8 +32,7 @@ const ContactScreen = () => {
       id: 3,
       name: "Jennifer Jones",
       phone: "+84 555 123 456",
-      avatar:
-        "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=60&h=60&fit=crop&crop=face",
+      avatar: "https://i.pravatar.cc/150?img=3",
       online: false,
       favorite: true,
     },
@@ -43,8 +40,7 @@ const ContactScreen = () => {
       id: 4,
       name: "Sofia",
       phone: "+84 777 888 999",
-      avatar:
-        "https://images.unsplash.com/photo-1489424731084-a5d8b219a5bb?w=60&h=60&fit=crop&crop=face",
+      avatar: "https://i.pravatar.cc/150?img=4",
       online: false,
       favorite: false,
     },
@@ -52,8 +48,7 @@ const ContactScreen = () => {
       id: 5,
       name: "Haider Lye",
       phone: "+84 111 222 333",
-      avatar:
-        "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=60&h=60&fit=crop&crop=face",
+      avatar: "https://i.pravatar.cc/150?img=5",
       online: false,
       favorite: false,
     },
@@ -61,8 +56,7 @@ const ContactScreen = () => {
       id: 6,
       name: "Mr. elon",
       phone: "+84 444 555 666",
-      avatar:
-        "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=60&h=60&fit=crop&crop=face",
+      avatar: "https://i.pravatar.cc/150?img=6",
       online: false,
       favorite: true,
     },
