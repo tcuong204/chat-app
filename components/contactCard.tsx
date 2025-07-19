@@ -46,6 +46,8 @@ const ContactCard: React.FC<ContactCardProps> = ({
             source={{ uri: contact.avatar }}
             className="w-14 h-14 rounded-full"
             resizeMode="cover"
+            width={50}
+            height={50}
             onError={() => setImageError(true)}
           />
         ) : (
@@ -76,7 +78,7 @@ const ContactCard: React.FC<ContactCardProps> = ({
       </View>
 
       <View className="flex-1 ml-4">
-        <View className="flex flex-row items-center justify-between">
+        <View className="flex flex-row items-center justify-between ml-4">
           <View className="flex mt-1">
             <Text className="font-semibold text-gray-800 text-base font-manrope">
               {contact.name}

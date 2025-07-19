@@ -9,6 +9,7 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
+  SafeAreaView,
   ScrollView,
   Text,
   TextInput,
@@ -81,160 +82,176 @@ const MovieDetails = () => {
   });
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      className="flex-1"
-      // keyboardVerticalOffset={90}
-    >
-      <View className="flex-1 bg-gray-50">
-        <Stack.Screen options={{ headerShown: false }} />
-        {/* Header */}
-        <View className="bg-transparent px-6 py-4">
-          <View className="mt-4 flex flex-row justify-between items-center">
-            <View className="flex flex-row items-center">
-              <TouchableOpacity onPress={() => router.back()} className="mr-4">
-                <AntDesign
-                  name="arrowleft"
-                  size={24}
-                  className="text-primary p-4"
-                />
-              </TouchableOpacity>
-              <View className="flex flex-row">
-                <Image
-                  source={{ uri: "https://i.pravatar.cc/150?img=1" }}
-                  className="w-10 h-10 rounded-full mr-3"
-                />
-                <View>
-                  <Text className=" font-bold font-manrope">Larry Machigo</Text>
-                  <Text className=" text-sm font-nunito">Online</Text>
+    <SafeAreaView className="flex-1 bg-white">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        className="flex-1"
+        // keyboardVerticalOffset={90}
+      >
+        <View className="flex-1 bg-gray-50">
+          <Stack.Screen options={{ headerShown: false }} />
+          {/* Header */}
+          <View className="bg-transparent px-6 py-4">
+            <View className=" flex flex-row justify-between items-center">
+              <View className="flex flex-row items-center">
+                <TouchableOpacity
+                  onPress={() => router.back()}
+                  className="mr-4"
+                >
+                  <AntDesign
+                    name="arrowleft"
+                    size={24}
+                    className="text-primary p-4"
+                  />
+                </TouchableOpacity>
+                <View className="flex flex-row">
+                  <Image
+                    source={{ uri: "https://i.pravatar.cc/150?img=1" }}
+                    className="w-10 h-10 rounded-full mr-3"
+                  />
+                  <View>
+                    <Text className=" font-bold font-manrope">
+                      Larry Machigo
+                    </Text>
+                    <Text className=" text-sm font-nunito">Online</Text>
+                  </View>
                 </View>
               </View>
-            </View>
 
-            <View className="flex flex-row space-x-3">
-              <TouchableOpacity className="p-2 bg-white/20 rounded-full">
-                <FontAwesome name="phone" size={24} color="#a855f7" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                className="p-2 bg-white/20 rounded-full"
-                // onPress={() => setActiveScreen('videoCall')}
-              >
-                <FontAwesome6 name="video" size={24} color="#a855f7" />
-              </TouchableOpacity>
+              <View className="flex flex-row space-x-2">
+                <TouchableOpacity className="p-2 bg-white/20 rounded-full">
+                  <FontAwesome name="phone" size={24} color="#a855f7" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  className="p-2 bg-white/20 rounded-full"
+                  // onPress={() => setActiveScreen('videoCall')}
+                >
+                  <FontAwesome6 name="video" size={24} color="#a855f7" />
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
 
-        {/* Messages */}
-        <ScrollView
-          className="flex-1 p-4 bg-white"
-          contentContainerStyle={{ paddingBottom: 16 }}
-          keyboardShouldPersistTaps="handled"
-        >
-          {messages.map((msg) => (
-            <View
-              key={msg.id}
-              className={`mb-4 ${
-                msg.sender === "me" ? "items-end" : "items-start"
-              } flex`}
-            >
+          {/* Messages */}
+          <ScrollView
+            className="flex-1 p-4 bg-white"
+            contentContainerStyle={{ paddingBottom: 16 }}
+            keyboardShouldPersistTaps="handled"
+          >
+            {messages.map((msg) => (
               <View
-                className={`max-w-xs px-4 py-3 rounded-2xl ${
-                  msg.sender === "me"
-                    ? "bg-blue-500 text-white rounded-br-md"
-                    : "bg-gray-100 text-gray-800 rounded-bl-md"
-                }`}
+                key={msg.id}
+                className={`mb-4 ${
+                  msg.sender === "me" ? "items-end" : "items-start"
+                } flex`}
               >
-                {msg.file ? (
-                  <View className="flex items-center space-x-2">
-                    <View className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center">
-                      {/* <Paperclip size={16} color="white" /> */}
-                    </View>
-                    <View>
-                      <Text className="font-medium">{msg.text}</Text>
-                      <Text className="text-xs opacity-70">{msg.fileSize}</Text>
-                    </View>
-                    <TouchableOpacity className="p-1 bg-white/20 rounded-full">
-                      <Text className="text-white">↓</Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : msg.sender == "me" ? (
-                  <Text className="font-nunito text-white">{msg.text}</Text>
-                ) : (
-                  <Text className="font-nunito">{msg.text}</Text>
-                )}
-              </View>
-            </View>
-          ))}
-        </ScrollView>
-
-        {/* Input */}
-        <View className="bg-white px-2 py-3 border-t border-gray-200">
-          <View className="flex flex-row items-center space-x-3">
-            {/* Thanh nhập tin nhắn */}
-            <View className="flex-row items-center px-4 bg-white">
-              {/* 4 icon bên trái hoặc arrow-left */}
-              {!inputFocused ? (
-                <View className="flex flex-row justify-between items-center">
-                  <TouchableOpacity className="mr-3">
-                    <AntDesign name="paperclip" size={24} color="#a855f7" />
-                  </TouchableOpacity>
-                  <TouchableOpacity className="mx-3">
-                    <AntDesign name="camera" size={24} color="#a855f7" />
-                  </TouchableOpacity>
-                  <TouchableOpacity className="mx-3">
-                    <AntDesign name="picture" size={24} color="#a855f7" />
-                  </TouchableOpacity>
-                  <TouchableOpacity className="mx-3">
-                    <FontAwesome name="microphone" size={24} color="#a855f7" />
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <TouchableOpacity
-                  className="mr-4 flex items-center"
-                  onPress={() => {
-                    if (inputRef.current) inputRef.current.blur();
-                  }}
+                <View
+                  className={`max-w-xs px-4 py-3 rounded-2xl ${
+                    msg.sender === "me"
+                      ? "bg-blue-500 text-white rounded-br-md"
+                      : "bg-gray-100 text-gray-800 rounded-bl-md"
+                  }`}
                 >
-                  <AntDesign name="left" size={24} color="#a855f7" />
-                </TouchableOpacity>
-              )}
-              {/* Animated input */}
-              <Animated.View
-                style={{ flex: 1, transform: [{ translateX: inputTranslate }] }}
-              >
-                <View className="bg-gray-100 rounded-full  flex-1 flex-row items-center">
-                  <TextInput
-                    value={message}
-                    onChangeText={setMessage}
-                    placeholder="Aa"
-                    className="flex-1 text-gray-800 font-medium w-full px-4 "
-                    onFocus={handleFocus}
-                    onBlur={handleBlur}
-                    style={{ flex: 1 }}
-                    ref={inputRef}
-                  />
-                  {message.length > 0 && (
-                    <TouchableOpacity
-                      onPress={() => setMessage("")}
-                      className="p-2"
-                    >
-                      <AntDesign name="close" size={18} color="#888" />
-                    </TouchableOpacity>
+                  {msg.file ? (
+                    <View className="flex items-center space-x-2">
+                      <View className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center">
+                        {/* <Paperclip size={16} color="white" /> */}
+                      </View>
+                      <View>
+                        <Text className="font-medium">{msg.text}</Text>
+                        <Text className="text-xs opacity-70">
+                          {msg.fileSize}
+                        </Text>
+                      </View>
+                      <TouchableOpacity className="p-1 bg-white/20 rounded-full">
+                        <Text className="text-white">↓</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : msg.sender == "me" ? (
+                    <Text className="font-nunito text-white">{msg.text}</Text>
+                  ) : (
+                    <Text className="font-nunito">{msg.text}</Text>
                   )}
                 </View>
-              </Animated.View>
-              <TouchableOpacity className="ml-3">
+              </View>
+            ))}
+          </ScrollView>
+
+          {/* Input */}
+          <View className="bg-white px-2 pt-3 border-t border-gray-200">
+            <View className="flex flex-row items-center space-x-3">
+              {/* Thanh nhập tin nhắn */}
+              <View className="flex-row items-center px-4 bg-white">
+                {/* 4 icon bên trái hoặc arrow-left */}
+                {!inputFocused ? (
+                  <View className="flex flex-row justify-between items-center">
+                    <TouchableOpacity className="mr-3">
+                      <AntDesign name="paperclip" size={24} color="#a855f7" />
+                    </TouchableOpacity>
+                    <TouchableOpacity className="mx-3">
+                      <AntDesign name="camera" size={24} color="#a855f7" />
+                    </TouchableOpacity>
+                    <TouchableOpacity className="mx-3">
+                      <AntDesign name="picture" size={24} color="#a855f7" />
+                    </TouchableOpacity>
+                    <TouchableOpacity className="mx-3">
+                      <FontAwesome
+                        name="microphone"
+                        size={24}
+                        color="#a855f7"
+                      />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    className="mr-4 flex items-center"
+                    onPress={() => {
+                      if (inputRef.current) inputRef.current.blur();
+                    }}
+                  >
+                    <AntDesign name="left" size={24} color="#a855f7" />
+                  </TouchableOpacity>
+                )}
+                {/* Animated input */}
+                <Animated.View
+                  style={{
+                    flex: 1,
+                    transform: [{ translateX: inputTranslate }],
+                  }}
+                >
+                  <View className="bg-gray-100 rounded-full  flex-1 flex-row items-center">
+                    <TextInput
+                      value={message}
+                      onChangeText={setMessage}
+                      placeholder="Aa"
+                      className="flex-1 text-gray-800 font-medium w-full px-4 "
+                      onFocus={handleFocus}
+                      onBlur={handleBlur}
+                      style={{ flex: 1 }}
+                      ref={inputRef}
+                    />
+                    {message.length > 0 && (
+                      <TouchableOpacity
+                        onPress={() => setMessage("")}
+                        className="p-2"
+                      >
+                        <AntDesign name="close" size={18} color="#888" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </Animated.View>
+                <TouchableOpacity className="ml-3">
+                  <Feather name="send" size={24} color="#a855f7" />
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity className="p-2">
                 <Feather name="send" size={24} color="#a855f7" />
               </TouchableOpacity>
             </View>
-            <TouchableOpacity className="p-2">
-              <Feather name="send" size={24} color="#a855f7" />
-            </TouchableOpacity>
           </View>
         </View>
-      </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 };
 

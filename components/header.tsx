@@ -128,7 +128,7 @@ const Header: React.FC<HeaderProps> = ({
     });
   };
   return (
-    <View className={`bg-white px-6 py-4 shadow-sm ${className} mt-5`}>
+    <View className={`bg-white px-6 py-4 shadow-sm ${className} `}>
       <Animated.View
         style={{ transform: [{ translateY: animation.inputTranslateY }] }}
       >

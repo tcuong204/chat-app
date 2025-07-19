@@ -150,6 +150,8 @@ const MessageCard: React.FC<MessageCardProps> = ({
               className="w-14 h-14 rounded-full"
               resizeMode="cover"
               onError={() => setImageError(true)}
+              width={50}
+              height={50}
             />
           ) : (
             <View className="w-14 h-14 rounded-full bg-gray-300 flex items-center justify-center">
@@ -168,7 +170,7 @@ const MessageCard: React.FC<MessageCardProps> = ({
           )}
         </View>
 
-        <View className="flex-1 ml-4">
+        <View className="flex-1 ml-6">
           <View className="flex flex-row items-center justify-between">
             <View className="flex mt-1">
               <Text className="font-semibold text-gray-800 text-base font-manrope">

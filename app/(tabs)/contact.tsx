@@ -1,6 +1,13 @@
 import { router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
-import { Animated, FlatList, ScrollView, Text, View } from "react-native";
+import {
+  Animated,
+  FlatList,
+  SafeAreaView,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 import { ContactCard, Header, Search } from "../../components";
 
 const ContactScreen = () => {
@@ -126,7 +133,7 @@ const ContactScreen = () => {
     };
   }, []);
   return (
-    <View className="flex-1 bg-gray-50">
+    <SafeAreaView className="flex-1 bg-gray-50">
       {/* Header */}
       <Header
         subtitle=""
@@ -162,7 +169,7 @@ const ContactScreen = () => {
           </View>
         )}
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 };
 
