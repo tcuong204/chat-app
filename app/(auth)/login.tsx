@@ -113,11 +113,10 @@ const LoginScreen = () => {
                 values.password,
                 deviceInfo
               );
-              console.log(response);
-
               // Lưu thông tin tài khoản vào SecureStore
               await saveAccount({
-                token: response.token,
+                accessToken: response.tokens.accessToken,
+                refreshToken: response.tokens.refreshToken,
                 user: response.user,
                 phoneNumber: formattedPhoneNumber,
               });

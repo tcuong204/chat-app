@@ -1,5 +1,5 @@
+import { getAccount } from "@/utils/secureStore";
 import axios from "axios";
-import * as SecureStore from "expo-secure-store";
 
 const axiosInstance = axios.create({
   baseURL: "http://192.168.0.102:3000/api/v1", // Thay đổi URL này cho phù hợp
@@ -13,12 +13,13 @@ const axiosInstance = axios.create({
 axiosInstance.interceptors.request.use(
   async (config) => {
     // Lấy thông tin tài khoản từ SecureStore
-    const accountData = await SecureStore.getItemAsync("user_account");
-    if (accountData) {
+    const account = await getAccount();
+    if (account) {
       try {
-        const account = JSON.parse(accountData);
-        if (account.token) {
-          config.headers["Authorization"] = `Bearer ${account.token}`;
+        if ((account as any).accessToken) {
+          config.headers["Authorization"] = `Bearer ${
+            (account as any).accessToken
+          }`;
         }
       } catch (error) {
         console.error("Lỗi khi parse account data:", error);

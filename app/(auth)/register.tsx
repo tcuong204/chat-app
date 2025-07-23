@@ -114,7 +114,7 @@ const RegisterScreen = () => {
             }
             try {
               const deviceInfo = await getDeviceInfo();
-              console.log("Device Info:", deviceInfo);
+              // console.log("Device Info:", deviceInfo);
               const response = await registerApi(
                 phoneNumber,
                 values.password,
@@ -124,7 +124,8 @@ const RegisterScreen = () => {
               );
               // Lưu thông tin tài khoản vào SecureStore
               await saveAccount({
-                token: response.token,
+                accessToken: response.tokens.accessToken,
+                refreshToken: response.tokens.refreshToken,
                 user: response.user,
                 phoneNumber: phoneNumber,
               });

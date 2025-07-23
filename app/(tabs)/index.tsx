@@ -1,5 +1,7 @@
+import { search } from "@/api/search";
+import { useDebounce } from "@/utils/useDebounce";
 import { router } from "expo-router";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
   FlatList,
@@ -28,6 +30,9 @@ export default function Index() {
   const [animation] = useState({
     translateY: new Animated.Value(0),
   });
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  console.log("abc", searchResults);
+
   const chatData = [
     {
       id: 1,
@@ -219,10 +224,25 @@ export default function Index() {
     console.log("Tab pressed:", tabId);
   }, []);
 
-  // Filter contacts based on search query
+  const debouncedQuery = useDebounce(searchQuery, 500); // 500ms debounce
+
+  // Filter contacts based on search query (chỉ dùng khi không có query)
   const filteredContacts = contactsData.filter((contact) =>
     contact.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  useEffect(() => {
+    if (debouncedQuery.trim() === "") {
+      setSearchResults([]);
+      return;
+    }
+    // Gọi API search mới
+    search(debouncedQuery).then((res) => {
+      console.log(res);
+
+      setSearchResults(res.users || []);
+    });
+  }, [debouncedQuery]);
 
   const renderContactItem = ({ item }: { item: any }) => (
     <ContactCard
@@ -232,7 +252,6 @@ export default function Index() {
       showLastMessage={false}
     />
   );
-
   return (
     <SafeAreaView className="flex-1 bg-white">
       <Animated.View
@@ -249,7 +268,10 @@ export default function Index() {
             showSearch={true}
             showNewMessage={true}
             searchValue={searchQuery}
-            onSearchChange={setSearchQuery}
+            onSearchChange={(q) => {
+              setSearchQuery(q);
+              console.log(searchResults);
+            }}
             translateY={animation.translateY}
             onSearchPress={handleSearchPress}
             onNewMessagePress={() => setShowNewMessageModal(true)}
@@ -285,7 +307,7 @@ export default function Index() {
                 </View>
               ) : (
                 <FlatList
-                  data={filteredContacts}
+                  data={searchResults}
                   renderItem={renderContactItem}
                   keyExtractor={(item) => item.id.toString()}
                   showsVerticalScrollIndicator={false}

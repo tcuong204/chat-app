@@ -1,3 +1,4 @@
+import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import axiosInstance from "./axiosInstance";
@@ -26,9 +27,10 @@ export async function getDeviceInfo() {
       "Device:" + Device.modelId ||
       "Device:" + "unknown",
     deviceName: Device.deviceName || Device.modelName || "unknown",
-    deviceType: Device.deviceType === 1 ? "mobile" : "tablet",
+    deviceType: Device.deviceType === 1 ? "mobile" : "mobile",
     platform: Device.osName?.toLowerCase() || "unknown",
     pushToken: "expo_push_token_xyz789",
+    appVersion: Constants.expoConfig?.version || "unknown",
   };
 }
 
@@ -66,6 +68,13 @@ export const register = async (
 
 // Đăng xuất
 export const logout = async () => {
-  const response = await axiosInstance.post("/auth/logout");
+  const response = await axiosInstance.post("/auth/logout", {});
   return response.data;
+};
+// lấy token mới
+export const refreshToken = async (refreshToken: string) => {
+  const res = await axiosInstance.post("/auth/refresh-token", {
+    refreshToken,
+  });
+  return res.data;
 };

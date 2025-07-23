@@ -4,7 +4,8 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import { Text } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { getAccount } from "../utils/secureStore";
+import { refreshToken } from "../api/authApi";
+import { getAccount, saveAccount } from "../utils/secureStore";
 import "./global.css";
 
 export default function RootLayout() {
@@ -18,12 +19,27 @@ export default function RootLayout() {
   useEffect(() => {
     async function checkLogin() {
       const account = await getAccount();
-      if (!account) {
-        router.replace("/(auth)/welcome");
-      }
+      // console.log(account);
+      !account ? router.replace("/(auth)/welcome") : router.replace("/(tabs)");
       setCheckingAuth(false);
     }
     checkLogin();
+
+    // Refresh token mỗi 15 phút
+    const interval = setInterval(async () => {
+      const account = await getAccount();
+      const refresh = (account as any)?.refreshToken;
+      if (refresh) {
+        const newToken = await refreshToken(refresh);
+        if ((newToken as any)?.accessToken) {
+          await saveAccount({
+            ...account,
+            accessToken: (newToken as any).accessToken,
+          });
+        }
+      }
+    }, 15 * 60 * 1000); // 15 phút
+    return () => clearInterval(interval);
   }, []);
 
   if (!fontsLoaded) {

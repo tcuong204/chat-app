@@ -38,7 +38,8 @@ const MessageCard: React.FC<MessageCardProps> = ({
 }) => {
   const pressStart = useRef(0);
   const [imageError, setImageError] = useState(false);
-
+  console.log("openRow", openRow);
+  console.log("isSwipingId", isSwipingId);
   const renderRightActions = (progress: any, dragX: any) => {
     const transDelete = dragX.interpolate({
       inputRange: [-60, 0],
@@ -118,25 +119,34 @@ const MessageCard: React.FC<MessageCardProps> = ({
       renderRightActions={renderRightActions}
       overshootRight={false}
       onSwipeableOpen={() => {
-        if (openRow !== null && openRow !== chat.id && openSwipeRef.current) {
+        if (isSwipingId !== openRow && openSwipeRef.current) {
           openSwipeRef.current.close();
         }
+        setIsSwipingId(chat.id);
         setOpenRow(chat.id);
       }}
-      onSwipeableWillOpen={() => setIsSwipingId(chat.id)}
+      // onSwipeableWillOpen={() => setOpenRow(chat.id)}
       onSwipeableClose={() => {
         setOpenRow(null);
       }}
       onSwipeableWillClose={() => {
-        setIsSwipingId(null);
+        // setIsSwipingId(null);
       }}
     >
       <TouchableOpacity
+        onLongPress={() => {
+          if (isSwipingId !== openRow && openSwipeRef.current) {
+            openSwipeRef.current.close();
+          }
+        }}
         className="flex-row items-center px-6 py-4 border-b border-gray-100"
         onPressIn={() => (pressStart.current = Date.now())}
         onPress={() => {
+          if (isSwipingId !== openRow && openSwipeRef.current) {
+            openSwipeRef.current.close();
+          }
           const duration = Date.now() - pressStart.current;
-          if (duration < 100 && openRow === null && isSwipingId === null) {
+          if (duration < 200 && openRow === null && isSwipingId === null) {
             onPress(chat.id);
           }
         }}

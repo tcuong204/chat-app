@@ -1,3 +1,4 @@
+import { logout } from "@/api/authApi";
 import AntDesign from "@expo/vector-icons/AntDesign";
 import { router } from "expo-router";
 import React from "react";
@@ -8,8 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { logout as logoutApi } from "../../api/authApi";
-import { deleteAccount } from "../../utils/secureStore";
+import { deleteAccount, getAccount } from "../../utils/secureStore";
 
 const profile = () => {
   const handleLogout = async () => {
@@ -23,19 +23,21 @@ const profile = () => {
         style: "destructive",
         onPress: async () => {
           try {
-            // Gọi API logout
-            await logoutApi();
+            // Lấy access token từ SecureStore
+            const account = await getAccount();
+            // Gọi API logout với accessToken
+            await logout();
 
             // Xóa thông tin tài khoản khỏi SecureStore
             await deleteAccount();
 
             // Chuyển về màn hình đăng nhập
-            router.replace("/(auth)/welcome");
+            router.replace("/(auth)/login");
           } catch (error) {
             console.error("Lỗi khi đăng xuất:", error);
             // Vẫn xóa local data và chuyển trang ngay cả khi API fail
             await deleteAccount();
-            router.replace("/(auth)/welcome");
+            router.replace("/(auth)/login");
           }
         },
       },
