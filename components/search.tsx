@@ -18,7 +18,15 @@ const Search: React.FC<SearchProps> = ({
   className = "",
 }) => {
   return (
-    <View className={`relative ${className}`}>
+    <View
+      className={`relative ${className} rounded-full bg-gray-100 flex flex-row items-center`}
+    >
+      <AntDesign
+        name="search1"
+        size={20}
+        color="#9ca3af"
+        style={{ paddingLeft: 6, paddingRight: 6 }}
+      />
       <TextInput
         className="bg-gray-100 px-12 py-3 rounded-full text-gray-800"
         placeholder={placeholder}
@@ -26,16 +34,11 @@ const Search: React.FC<SearchProps> = ({
         value={value}
         onChangeText={onChangeText}
       />
-      <AntDesign
-        name="search1"
-        size={20}
-        color="#9ca3af"
-        style={{ position: "absolute", left: 16, top: 12 }}
-      />
+
       {value.length > 0 && onClear && (
         <TouchableOpacity
           onPress={onClear}
-          style={{ position: "absolute", right: 16, top: 12 }}
+          style={{ position: "absolute", right: 16, padding: 10 }}
         >
           <AntDesign name="close" size={20} color="#9ca3af" />
         </TouchableOpacity>

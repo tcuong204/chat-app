@@ -1,3 +1,4 @@
+import { LinearGradient } from "expo-linear-gradient";
 import React from "react";
 import { Text, TouchableOpacity, View } from "react-native";
 
@@ -21,23 +22,44 @@ const TabNavigation: React.FC<TabNavigationProps> = ({
   return (
     <View className={`flex justify-center ${className}`}>
       <View className="flex flex-row justify-center space-x-1 rounded-full w-auto">
-        {tabs.map((tab) => (
-          <TouchableOpacity
-            key={tab.id}
-            className={`px-6 py-2 rounded-full ${
-              tab.active ? "bg-[#a855f7]" : ""
-            }`}
-            onPress={() => onTabPress(tab.id)}
-          >
-            <Text
-              className={`font-roboto ${
-                tab.active ? "text-white" : "text-gray-600 font-nunito"
-              }`}
+        {tabs.map((tab) =>
+          tab.active ? (
+            <LinearGradient
+              colors={["#f9c0e4", "#6e00ff"]}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={{ borderRadius: 9999 }}
+              key={tab.id}
             >
-              {tab.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              <TouchableOpacity
+                className={`px-6 py-2 rounded-full`}
+                onPress={() => onTabPress(tab.id)}
+              >
+                <Text
+                  className={`font-roboto ${
+                    tab.active ? "text-white" : "text-gray-600 font-nunito"
+                  }`}
+                >
+                  {tab.label}
+                </Text>
+              </TouchableOpacity>
+            </LinearGradient>
+          ) : (
+            <TouchableOpacity
+              key={tab.id}
+              className={`px-6 py-2 rounded-full`}
+              onPress={() => onTabPress(tab.id)}
+            >
+              <Text
+                className={`font-roboto ${
+                  tab.active ? "text-white" : "text-gray-600 font-nunito"
+                }`}
+              >
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          )
+        )}
       </View>
     </View>
   );

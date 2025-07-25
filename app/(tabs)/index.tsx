@@ -1,4 +1,4 @@
-import { search } from "@/api/search";
+import { search } from "@/api/searchApi";
 import { useDebounce } from "@/utils/useDebounce";
 import { router } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -11,7 +11,9 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Swipeable } from "react-native-gesture-handler";
+import { RefreshControl, Swipeable } from "react-native-gesture-handler";
+
+import { images } from "@/constants/images";
 import {
   ContactCard,
   Header,
@@ -31,8 +33,15 @@ export default function Index() {
     translateY: new Animated.Value(0),
   });
   const [searchResults, setSearchResults] = useState<any[]>([]);
-  console.log("abc", searchResults);
+  const [refreshing, setRefreshing] = useState(false);
 
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    // Giả lập gọi API
+    setTimeout(() => {
+      setRefreshing(false);
+    }, 2000);
+  }, []);
   const chatData = [
     {
       id: 1,
@@ -155,7 +164,7 @@ export default function Index() {
     },
   ];
 
-  const handleContactPress = useCallback((contactId: number) => {
+  const handleContactPress = useCallback((contactId: number | string) => {
     setShowNewMessageModal(false);
     setSearchQuery("");
     router.push(`/messages/${contactId}`);
@@ -193,7 +202,7 @@ export default function Index() {
     ]);
   }, []);
 
-  const handleSearchContactPress = useCallback((contactId: number) => {
+  const handleSearchContactPress = useCallback((contactId: number | string) => {
     setIsSearchMode(false);
     setSearchQuery("");
     router.push(`/messages/${contactId}`);
@@ -214,9 +223,9 @@ export default function Index() {
   }, []);
 
   const tabs = [
-    { id: "all", label: "All Chats", active: true },
-    { id: "groups", label: "Groups", active: false },
-    { id: "contacts", label: "Contacts", active: false },
+    { id: "all", label: "Tất cả", active: true },
+    { id: "groups", label: "Nhóm", active: false },
+    { id: "contacts", label: "Liên hệ", active: false },
   ];
 
   const handleTabPress = useCallback((tabId: string) => {
@@ -238,15 +247,22 @@ export default function Index() {
     }
     // Gọi API search mới
     search(debouncedQuery).then((res) => {
-      console.log(res);
-
       setSearchResults(res.users || []);
     });
   }, [debouncedQuery]);
 
-  const renderContactItem = ({ item }: { item: any }) => (
+  // Replace renderContactItem with renderUserItem for new API user shape
+  const renderUserItem = ({ item }: { item: any }) => (
     <ContactCard
-      contact={item}
+      contact={{
+        id: item.id,
+        name: item.fullName,
+        avatar: item.avatarUrl || images.defaultAvatar,
+        online: item.isOnline,
+        isFriend: item.isFriend,
+        phoneNumber: item.phoneNumber,
+        // add more fields if needed
+      }}
       onPress={handleSearchContactPress}
       showPhone={false}
       showLastMessage={false}
@@ -308,7 +324,7 @@ export default function Index() {
               ) : (
                 <FlatList
                   data={searchResults}
-                  renderItem={renderContactItem}
+                  renderItem={renderUserItem}
                   keyExtractor={(item) => item.id.toString()}
                   showsVerticalScrollIndicator={false}
                 />
@@ -316,25 +332,32 @@ export default function Index() {
             </View>
           ) : (
             // Chat List
-            <ScrollView className="flex-1 bg-white">
+            <ScrollView
+              className="flex-1 bg-bgPrimary"
+              refreshControl={
+                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+              }
+            >
               {/* Tab Navigation */}
               <TabNavigation tabs={tabs} onTabPress={handleTabPress} />
 
               {/* Chat Messages */}
-              {chatData.map((chat) => (
-                <MessageCard
-                  key={chat.id}
-                  chat={chat}
-                  onPress={handleChatPress}
-                  onDelete={handleDeleteChat}
-                  onPin={handlePinChat}
-                  openRow={openRow}
-                  setOpenRow={setOpenRow}
-                  isSwipingId={isSwipingId}
-                  setIsSwipingId={setIsSwipingId}
-                  openSwipeRef={openSwipeRef}
-                />
-              ))}
+              <View className="bg-bgPrimary rounded-lg">
+                {chatData.map((chat) => (
+                  <MessageCard
+                    key={chat.id}
+                    chat={chat}
+                    onPress={handleChatPress}
+                    onDelete={handleDeleteChat}
+                    onPin={handlePinChat}
+                    openRow={openRow}
+                    setOpenRow={setOpenRow}
+                    isSwipingId={isSwipingId}
+                    setIsSwipingId={setIsSwipingId}
+                    openSwipeRef={openSwipeRef}
+                  />
+                ))}
+              </View>
             </ScrollView>
           )}
 

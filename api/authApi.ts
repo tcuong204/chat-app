@@ -74,7 +74,7 @@ export const logout = async () => {
 // lấy token mới
 export const refreshToken = async (refreshToken: string) => {
   const res = await axiosInstance.post("/auth/refresh-token", {
-    refreshToken,
+    refreshToken: refreshToken,
   });
   return res.data;
 };

@@ -1,5 +1,7 @@
 import Entypo from "@expo/vector-icons/Entypo";
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { LinearGradient } from "expo-linear-gradient";
+import { router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -17,8 +19,10 @@ interface HeaderProps {
   showNewMessage?: boolean;
   showAddButton?: boolean;
   searchValue?: string;
+  showFriendRequest?: boolean;
   onSearchChange?: (text: string) => void;
   onSearchPress?: () => void;
+  totalFriendRequest?: number;
   onNewMessagePress?: () => void;
   onAddPress?: () => void;
   isSearchMode?: boolean;
@@ -35,8 +39,10 @@ const Header: React.FC<HeaderProps> = ({
   showAddButton = false,
   searchValue = "",
   isSearchMode = false,
+  totalFriendRequest = 0,
   onSearchChange,
   onSearchPress,
+  showFriendRequest = false,
   onNewMessagePress,
   onAddPress,
   translateY,
@@ -158,6 +164,28 @@ const Header: React.FC<HeaderProps> = ({
                 >
                   <Ionicons name="add" size={20} color="#a855f7" />
                 </TouchableOpacity>
+              )}
+              {showFriendRequest && (
+                <LinearGradient
+                  colors={["#f9c0e4", "#6e00ff"]}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={{ borderRadius: 9999 }}
+                >
+                  <TouchableOpacity
+                    className="p-2 rounded-full"
+                    onPress={() => router.push("/contact/friendRequests")}
+                  >
+                    <View className="flex flex-row">
+                      <Text className="text-white font-roboto  font-bold px-2">
+                        {totalFriendRequest || 0}
+                      </Text>
+                      <Text className="font-roboto text-white">
+                        Lời mời kết bạn
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                </LinearGradient>
               )}
             </View>
           </View>

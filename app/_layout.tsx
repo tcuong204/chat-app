@@ -1,9 +1,11 @@
+import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { useFonts } from "expo-font";
 import { router, Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import { Text } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import Toast from "react-native-toast-message";
 import { refreshToken } from "../api/authApi";
 import { getAccount, saveAccount } from "../utils/secureStore";
 import "./global.css";
@@ -31,6 +33,8 @@ export default function RootLayout() {
       const refresh = (account as any)?.refreshToken;
       if (refresh) {
         const newToken = await refreshToken(refresh);
+        console.log("New token:", (newToken as any)?.accessToken);
+
         if ((newToken as any)?.accessToken) {
           await saveAccount({
             ...account,
@@ -38,7 +42,8 @@ export default function RootLayout() {
           });
         }
       }
-    }, 15 * 60 * 1000); // 15 phút
+      console.log("access", (account as any)?.accessToken);
+    }, 10 * 60 * 1000); // 15 phút
     return () => clearInterval(interval);
   }, []);
 
@@ -52,12 +57,15 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView className="flex-1">
-      <StatusBar style="dark" />
-      <Stack screenOptions={{ animation: "flip" }}>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="messages/[id]" options={{ headerShown: false }} />
-        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-      </Stack>
+      <BottomSheetModalProvider>
+        <StatusBar style="dark" />
+        <Stack screenOptions={{ animation: "flip" }}>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="messages/[id]" options={{ headerShown: false }} />
+          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+        </Stack>
+        <Toast />
+      </BottomSheetModalProvider>
     </GestureHandlerRootView>
   );
 }

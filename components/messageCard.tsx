@@ -38,8 +38,8 @@ const MessageCard: React.FC<MessageCardProps> = ({
 }) => {
   const pressStart = useRef(0);
   const [imageError, setImageError] = useState(false);
-  console.log("openRow", openRow);
-  console.log("isSwipingId", isSwipingId);
+  // console.log("openRow", openRow);
+  // console.log("isSwipingId", isSwipingId);
   const renderRightActions = (progress: any, dragX: any) => {
     const transDelete = dragX.interpolate({
       inputRange: [-60, 0],

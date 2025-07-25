@@ -27,7 +27,7 @@ interface NewMessageModalProps {
   contacts: Contact[];
   searchQuery: string;
   onSearchChange: (query: string) => void;
-  onContactPress: (id: number) => void;
+  onContactPress: (id: number | string) => void;
 }
 
 const NewMessageModal: React.FC<NewMessageModalProps> = ({

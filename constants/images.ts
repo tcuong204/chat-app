@@ -1,3 +1,4 @@
+import defaultAvatar from "../assets/images/default.png";
 import facebook from "../assets/images/facebook.png";
 import github from "../assets/images/github.png";
 import google from "../assets/images/google.png";
@@ -7,4 +8,5 @@ export const images = {
   google,
   facebook,
   github,
+  defaultAvatar,
 };

@@ -1,5 +1,6 @@
+import FriendOption from "@/components/friendOption";
 import { router } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
   FlatList,
@@ -8,84 +9,115 @@ import {
   Text,
   View,
 } from "react-native";
+import {
+  GestureHandlerRootView,
+  RefreshControl,
+} from "react-native-gesture-handler";
+import { getFriends } from "../../api/friendApi";
 import { ContactCard, Header, Search } from "../../components";
+
+// Interface cho user trong friend
+interface FriendUser {
+  id: string;
+  fullName: string;
+  phoneNumber: string;
+  isOnline: boolean;
+  lastSeen: string;
+  avatarUrl: string | null;
+}
+
+// Interface cho từng friend
+interface Friend {
+  addMethod: string;
+  friendedAt: string;
+  isOnline: boolean;
+  lastInteraction: string | null;
+  lastSeen: string;
+  mutualFriendsCount: number;
+  user: FriendUser;
+}
 
 const ContactScreen = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState(0);
+  const [contactsData, setContactsData] = useState<Friend[]>([]);
+  const [selectedFriend, setSelectedFriend] = useState<{
+    avatar: string;
+    name: string;
+    friendId: string;
+    friendedAt?: string;
+  } | null>(null);
+  const [showOptionModal, setShowOptionModal] = useState(false);
+  const [loading, setLoading] = useState(true);
   const animatedValues = useRef([
     new Animated.Value(180), // Tab đầu active
     new Animated.Value(0), // Các tab khác
   ]).current;
-  // Mock data for contacts
-  const contactsData = [
-    {
-      id: 1,
-      name: "Larry Machigo",
-      phone: "+84 123 456 789",
-      avatar: "https://i.pravatar.cc/150?img=1",
-      online: true,
-      favorite: true,
-    },
-    {
-      id: 2,
-      name: "Natalie Nora",
-      phone: "+84 987 654 321",
-      avatar: "https://i.pravatar.cc/150?img=2",
-      online: true,
-      favorite: false,
-    },
-    {
-      id: 3,
-      name: "Jennifer Jones",
-      phone: "+84 555 123 456",
-      avatar: "https://i.pravatar.cc/150?img=3",
-      online: false,
-      favorite: true,
-    },
-    {
-      id: 4,
-      name: "Sofia",
-      phone: "+84 777 888 999",
-      avatar: "https://i.pravatar.cc/150?img=4",
-      online: false,
-      favorite: false,
-    },
-    {
-      id: 5,
-      name: "Haider Lye",
-      phone: "+84 111 222 333",
-      avatar: "https://i.pravatar.cc/150?img=5",
-      online: false,
-      favorite: false,
-    },
-    {
-      id: 6,
-      name: "Mr. elon",
-      phone: "+84 444 555 666",
-      avatar: "https://i.pravatar.cc/150?img=6",
-      online: false,
-      favorite: true,
-    },
-  ];
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    // Giả lập gọi API
+    fetchFriends();
+    setTimeout(() => {
+      setRefreshing(false);
+    }, 2000);
+  }, []);
+  const handleShowFriendOption = (friendInfo: {
+    avatar: string;
+    name: string;
+    friendId: string;
+    friendedAt?: string;
+  }) => {
+    setSelectedFriend(friendInfo);
+    setShowOptionModal(true);
+  };
+  const fetchFriends = async () => {
+    setLoading(true);
+    try {
+      const res = await getFriends();
+      // Nếu API trả về mảng trực tiếp
+      // setContactsData(res);
+      // Nếu API trả về object có field users hoặc friends
+      setContactsData(res.friends || res.users || res || []);
+    } catch (e) {
+      setContactsData([]);
+    }
+    setLoading(false);
+  };
+  useEffect(() => {
+    fetchFriends();
+  }, []);
 
   // Filter contacts based on search query
   const filteredContacts = contactsData.filter(
-    (contact) =>
-      contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      contact.phone.includes(searchQuery)
+    (friend) =>
+      friend.user.fullName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      friend.user.phoneNumber?.includes(searchQuery)
   );
 
-  const handleContactPress = (contactId: number) => {
+  const handleContactPress = (contactId: number | string) => {
     router.push(`/messages/${contactId}`);
   };
 
-  const renderContactItem = ({ item }: { item: any }) => (
+  const renderContactItem = ({ item }: { item: Friend }) => (
     <ContactCard
-      contact={item}
-      onPress={handleContactPress}
+      contact={{
+        id: item.user.id,
+        name: item.user.fullName,
+        avatar:
+          item.user.avatarUrl || require("../../assets/images/default.png"),
+        online: item.user.isOnline,
+        favorite: false,
+        phoneNumber: item.user.phoneNumber,
+        isFriend: true,
+        friendedAt: item.friendedAt, // nếu có, truyền thêm
+      }}
+      onPress={(id) => handleContactPress(id)}
       showActions={true}
       showPhone={true}
+      fetchFriends={fetchFriends}
+      onShowFriendOption={handleShowFriendOption}
     />
   );
 
@@ -94,7 +126,8 @@ const ContactScreen = () => {
     const groupedContacts = alphabet
       .map((letter) => {
         const contacts = filteredContacts.filter(
-          (contact) => contact.name.charAt(0).toUpperCase() === letter
+          (friend) =>
+            (friend.user.fullName || "").charAt(0).toUpperCase() === letter
         );
         return { letter, contacts };
       })
@@ -109,12 +142,25 @@ const ContactScreen = () => {
                 {group.letter}
               </Text>
             </View>
-            {group.contacts.map((contact) => (
+            {group.contacts.map((friend) => (
               <ContactCard
-                key={contact.id}
-                contact={contact}
-                onPress={handleContactPress}
+                key={friend.user.id}
+                contact={{
+                  id: friend.user.id,
+                  name: friend.user.fullName,
+                  avatar:
+                    friend.user.avatarUrl ||
+                    require("../../assets/images/default.png"),
+                  online: friend.user.isOnline,
+                  favorite: false,
+                  phoneNumber: friend.user.phoneNumber,
+                  isFriend: true,
+                  friendedAt: friend.friendedAt, // nếu có, truyền thêm
+                }}
+                onShowFriendOption={handleShowFriendOption}
+                onPress={(id) => handleContactPress(id)}
                 showActions={true}
+                fetchFriends={fetchFriends}
                 showPhone={true}
               />
             ))}
@@ -133,43 +179,61 @@ const ContactScreen = () => {
     };
   }, []);
   return (
-    <SafeAreaView className="flex-1 bg-gray-50">
-      {/* Header */}
-      <Header
-        subtitle=""
-        title="Danh bạ"
-        showAddButton={true}
-        onAddPress={() => console.log("Add contact")}
-      />
-
-      {/* Search Input */}
-      <View className="bg-white px-6 py-4">
-        <Search
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder="Search contacts..."
-          onClear={() => setSearchQuery("")}
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaView className="flex-1 bg-gray-50">
+        {/* Header */}
+        <Header
+          subtitle=""
+          title="Danh bạ"
+          // showAddButton={true}
+          onAddPress={() => console.log("Add contact")}
+          showFriendRequest={true}
         />
-      </View>
 
-      {/* Content */}
-      <ScrollView className="flex-1">
-        {searchQuery.length === 0 ? (
-          // Show alphabet sections when no search
-          renderAlphabetSection()
-        ) : (
-          // Show filtered results
-          <View className="bg-white mt-4">
-            <FlatList
-              data={filteredContacts}
-              renderItem={renderContactItem}
-              keyExtractor={(item) => item.id.toString()}
-              scrollEnabled={false}
-            />
-          </View>
-        )}
-      </ScrollView>
-    </SafeAreaView>
+        {/* Search Input */}
+        <View className="bg-white px-6 py-4">
+          <Search
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Tìm bạn bè..."
+            onClear={() => setSearchQuery("")}
+          />
+        </View>
+
+        {/* Content */}
+        <ScrollView
+          className="flex-1"
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+        >
+          {loading ? (
+            <View className="flex-1 items-center justify-center mt-10">
+              <Text>Đang tải danh bạ...</Text>
+            </View>
+          ) : searchQuery.length === 0 ? (
+            // Show alphabet sections when no search
+            renderAlphabetSection()
+          ) : (
+            // Show filtered results
+            <View className="bg-white mt-4">
+              <FlatList
+                data={filteredContacts}
+                renderItem={renderContactItem}
+                keyExtractor={(item) => String(item.user.id)}
+                scrollEnabled={false}
+              />
+            </View>
+          )}
+        </ScrollView>
+        <FriendOption
+          show={showOptionModal}
+          setShow={setShowOptionModal}
+          friendInfo={selectedFriend}
+          fetchFriends={fetchFriends}
+        />
+      </SafeAreaView>
+    </GestureHandlerRootView>
   );
 };
 
