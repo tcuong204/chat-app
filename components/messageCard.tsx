@@ -10,19 +10,19 @@ interface MessageCardProps {
     lastMessage: string;
     time: string;
     avatar: string;
-    online: boolean;
+    online?: boolean;
     pinned?: boolean;
     typing?: boolean;
     hasVoice?: boolean;
   };
   onPress: (id: number) => void;
-  onDelete?: (id: number) => void;
+  onDelete?: (id: string) => void;
   onPin?: (id: number) => void;
   openRow: number | null;
   setOpenRow: (id: number | null) => void;
   isSwipingId: number | null;
   setIsSwipingId: (id: number | null) => void;
-  openSwipeRef: React.RefObject<Swipeable | null>;
+  swipeRef: React.MutableRefObject<Map<number, Swipeable>>;
 }
 
 const MessageCard: React.FC<MessageCardProps> = ({
@@ -34,7 +34,7 @@ const MessageCard: React.FC<MessageCardProps> = ({
   setOpenRow,
   isSwipingId,
   setIsSwipingId,
-  openSwipeRef,
+  swipeRef,
 }) => {
   const pressStart = useRef(0);
   const [imageError, setImageError] = useState(false);
@@ -112,64 +112,63 @@ const MessageCard: React.FC<MessageCardProps> = ({
   return (
     <Swipeable
       ref={(ref) => {
-        if (openRow === chat.id && ref) {
-          openSwipeRef.current = ref;
-        }
+        swipeRef.current.set(chat.id, ref);
       }}
       renderRightActions={renderRightActions}
       overshootRight={false}
-      onSwipeableOpen={() => {
-        if (isSwipingId !== openRow && openSwipeRef.current) {
-          openSwipeRef.current.close();
+      onSwipeableWillOpen={() => {
+        if (openRow && openRow !== chat.id) {
+          const prevRef = swipeRef.current.get(openRow);
+          prevRef?.close();
         }
-        setIsSwipingId(chat.id);
         setOpenRow(chat.id);
       }}
-      // onSwipeableWillOpen={() => setOpenRow(chat.id)}
       onSwipeableClose={() => {
-        setOpenRow(null);
-      }}
-      onSwipeableWillClose={() => {
-        // setIsSwipingId(null);
+        if (openRow === chat.id) {
+          setOpenRow(null);
+        }
       }}
     >
       <TouchableOpacity
         onLongPress={() => {
-          if (isSwipingId !== openRow && openSwipeRef.current) {
-            openSwipeRef.current.close();
+          const prevRef = swipeRef.current.get(chat.id);
+          prevRef?.close();
+        }}
+        onPressIn={() => {
+          pressStart.current = Date.now();
+        }}
+        onPress={() => {
+          const duration = Date.now() - pressStart.current;
+          const currentRef = swipeRef.current.get(chat.id);
+
+          if (openRow && openRow !== chat.id) {
+            // Nếu có dòng đang mở và khác dòng hiện tại → đóng dòng đang mở
+            const openRef = swipeRef.current.get(openRow);
+            openRef?.close();
+          }
+
+          if (duration < 200 && openRow === null && isSwipingId === null) {
+            // Nếu là click ngắn → xử lý mở nội dung tin nhắn
+            onPress(chat.id);
+          } else {
+            // Nếu giữ lâu → đóng dòng hiện tại (nếu đang mở)
+            currentRef?.close();
           }
         }}
         className="flex-row items-center px-6 py-4 border-b border-gray-100"
-        onPressIn={() => (pressStart.current = Date.now())}
-        onPress={() => {
-          if (isSwipingId !== openRow && openSwipeRef.current) {
-            openSwipeRef.current.close();
-          }
-          const duration = Date.now() - pressStart.current;
-          if (duration < 200 && openRow === null && isSwipingId === null) {
-            onPress(chat.id);
-          }
-        }}
-        activeOpacity={openRow === chat.id ? 1 : 0.7}
-        disabled={isSwipingId === chat.id}
       >
-        <View className="relative">
-          {!imageError ? (
-            <Image
-              source={{ uri: chat.avatar }}
-              className="w-14 h-14 rounded-full"
-              resizeMode="cover"
-              onError={() => setImageError(true)}
-              width={50}
-              height={50}
-            />
-          ) : (
-            <View className="w-14 h-14 rounded-full bg-gray-300 flex items-center justify-center">
-              <Text className="text-gray-600 font-bold text-lg">
-                {chat.name.charAt(0).toUpperCase()}
-              </Text>
-            </View>
-          )}
+        <View className="relative ">
+          <Image
+            source={
+              typeof chat.avatar === "string"
+                ? { uri: chat.avatar }
+                : chat.avatar
+            }
+            className="w-14 h-14 rounded-full"
+            resizeMode="cover"
+            onError={() => setImageError(true)}
+            style={{ width: 56, height: 56 }}
+          />
           {chat.online && (
             <View className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-white"></View>
           )}

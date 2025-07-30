@@ -1,4 +1,5 @@
 export { default as ContactCard } from "./contactCard";
+export { default as CreateGroupModal } from "./createGroupModal";
 export { default as Header } from "./header";
 export { default as MessageCard } from "./messageCard";
 export { default as NewMessageModal } from "./newMessages";

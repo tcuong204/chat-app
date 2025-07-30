@@ -4,8 +4,11 @@ import { Tabs } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { ImageBackground, SafeAreaView, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { useTabBar } from "../../utils/tabBarContext";
+
 const _layout = () => {
   const [newRequest, setNewRequest] = useState(0);
+  const { isTabBarVisible } = useTabBar();
 
   useEffect(() => {
     const fetchRequests = async () => {
@@ -98,6 +101,7 @@ const _layout = () => {
               borderWidth: 2,
               borderBottomWidth: 0,
               borderColor: "#e4e4e4",
+              display: isTabBarVisible ? "flex" : "none",
             },
           }}
         >

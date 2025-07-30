@@ -27,7 +27,7 @@ interface FriendUser {
 }
 
 // Interface cho từng friend
-interface Friend {
+export interface Friend {
   addMethod: string;
   friendedAt: string;
   isOnline: boolean;
@@ -97,7 +97,7 @@ const ContactScreen = () => {
   );
 
   const handleContactPress = (contactId: number | string) => {
-    router.push(`/messages/${contactId}`);
+    router.push(`/profile/${contactId}`);
   };
 
   const renderContactItem = ({ item }: { item: Friend }) => (

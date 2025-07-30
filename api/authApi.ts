@@ -48,6 +48,11 @@ export const login = async (
   return response.data;
 };
 
+export const getProfile = async () => {
+  const response = await axiosInstance.get("/auth/profile");
+  return response.data;
+};
+
 // Đăng ký
 export const register = async (
   phoneNumber: string,

@@ -8,6 +8,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import Toast from "react-native-toast-message";
 import { refreshToken } from "../api/authApi";
 import { getAccount, saveAccount } from "../utils/secureStore";
+import { TabBarProvider } from "../utils/tabBarContext";
 import "./global.css";
 
 export default function RootLayout() {
@@ -57,15 +58,20 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView className="flex-1">
-      <BottomSheetModalProvider>
-        <StatusBar style="dark" />
-        <Stack screenOptions={{ animation: "flip" }}>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="messages/[id]" options={{ headerShown: false }} />
-          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-        </Stack>
-        <Toast />
-      </BottomSheetModalProvider>
+      <TabBarProvider>
+        <BottomSheetModalProvider>
+          <StatusBar style="dark" />
+          <Stack screenOptions={{ animation: "flip" }}>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen
+              name="messages/[id]"
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+          </Stack>
+          <Toast />
+        </BottomSheetModalProvider>
+      </TabBarProvider>
     </GestureHandlerRootView>
   );
 }

@@ -1,6 +1,7 @@
+import { createDirectConversation } from "@/api/conversationApi";
 import { getAccount } from "@/utils/secureStore";
 import AntDesign from "@expo/vector-icons/AntDesign";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useState } from "react";
 import {
   Button,
@@ -16,7 +17,7 @@ import { sendFriendRequest } from "../api/friendApi";
 import { showError, showSuccess } from "../utils/customToast";
 interface ContactCardProps {
   contact: {
-    id: number | string;
+    id: string;
     name: string;
     avatar: string;
     online?: boolean;
@@ -32,7 +33,8 @@ interface ContactCardProps {
     isFriend?: boolean;
     friendedAt?: string;
   };
-  onPress: (id: number | string) => void;
+  onPress: (id: string) => void;
+  onPressRouter?: (id: string) => void;
   showActions?: boolean;
   showPhone?: boolean;
   showOption?: boolean;
@@ -50,6 +52,7 @@ interface ContactCardProps {
 const ContactCard: React.FC<ContactCardProps> = ({
   contact,
   onPress,
+  onPressRouter,
   showActions = false,
   showPhone = false,
   showLastMessage = false,
@@ -62,17 +65,20 @@ const ContactCard: React.FC<ContactCardProps> = ({
   const [showFriendModal, setShowFriendModal] = useState(false);
   const [showOptionModal, setShowOptionModal] = useState(false);
   const [friendMessage, setFriendMessage] = useState("");
-
+  const param = useLocalSearchParams();
+  const directConversation = async (participantId: string) => {
+    try {
+      const res = await createDirectConversation(participantId);
+      res && router.push(`/messages/${res.conversation.id}`);
+    } catch (error) {
+      console.log(error);
+    }
+  };
   return (
     <>
       <TouchableOpacity
         className={`flex-row items-center px-6 py-4 border-b border-gray-100 ${className}`}
-        onPress={() =>
-          router.push({
-            pathname: "/profile/[id]",
-            params: { id: String(contact.id) },
-          })
-        }
+        onPress={(id) => onPress(contact.id)}
       >
         <View className="relative">
           {!imageError ? (
@@ -90,7 +96,7 @@ const ContactCard: React.FC<ContactCardProps> = ({
           ) : (
             <View className="w-14 h-14 rounded-full bg-gray-300 flex items-center justify-center">
               <Text className="text-gray-600 font-bold text-lg">
-                {contact.name.charAt(0).toUpperCase()}
+                {contact.name ? contact.name.charAt(0).toUpperCase() : "?"}
               </Text>
             </View>
           )}
@@ -118,7 +124,7 @@ const ContactCard: React.FC<ContactCardProps> = ({
           <View className="flex flex-row items-center justify-between ml-4">
             <View className="flex mt-1">
               <Text className="font-semibold text-gray-800 text-base font-manrope">
-                {contact.name}
+                {contact.name || "Unknown"}
               </Text>
               {showPhone && contact.phoneNumber && (
                 <Text className="text-gray-600 text-sm">
@@ -156,7 +162,7 @@ const ContactCard: React.FC<ContactCardProps> = ({
               <View className="flex flex-row space-x-2">
                 <TouchableOpacity
                   className="p-4"
-                  onPress={() => onPress(contact.id)}
+                  onPress={() => directConversation(contact.id)}
                 >
                   <AntDesign name="message1" size={24} color="#a855f7" />
                 </TouchableOpacity>
@@ -165,7 +171,7 @@ const ContactCard: React.FC<ContactCardProps> = ({
                   onPress={() =>
                     onShowFriendOption?.({
                       avatar: contact.avatar,
-                      name: contact.name,
+                      name: contact.name || "Unknown",
                       friendId: String(contact.id),
                       friendedAt: contact.friendedAt, // nếu có, truyền thêm
                     })
@@ -237,7 +243,7 @@ const ContactCard: React.FC<ContactCardProps> = ({
             <Text
               style={{ fontWeight: "bold", fontSize: 16, marginBottom: 12 }}
             >
-              {contact.name}
+              {contact.name || "Unknown"}
             </Text>
             <TextInput
               placeholder="Nhập lời nhắn kết bạn..."

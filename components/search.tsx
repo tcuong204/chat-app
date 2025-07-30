@@ -28,7 +28,7 @@ const Search: React.FC<SearchProps> = ({
         style={{ paddingLeft: 6, paddingRight: 6 }}
       />
       <TextInput
-        className="bg-gray-100 px-12 py-3 rounded-full text-gray-800"
+        className="bg-gray-100  py-3 rounded-full text-gray-800"
         placeholder={placeholder}
         placeholderTextColor="#9ca3af"
         value={value}

@@ -24,6 +24,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useTabBar } from "../utils/tabBarContext";
 
 interface Friend {
   avatar: string | null;
@@ -51,6 +52,7 @@ const FriendOption: React.FC<FriendOption> = ({
   fetchFriends,
 }) => {
   const bottomSheetRef = useRef<BottomSheet>(null);
+  const { hideTabBar, showTabBar } = useTabBar();
   const handleDeleteFriend = async () => {
     // Xử lý hủy kết bạn
     Alert.alert("Xóa bạn bè", "Bạn có chắc chắn muốn xóa bạn bè này?", [
@@ -89,13 +91,15 @@ const FriendOption: React.FC<FriendOption> = ({
     const timer = setTimeout(() => {
       if (show) {
         bottomSheetRef.current?.expand();
+        hideTabBar(); // Ẩn tab bar khi bottom sheet hiện lên
       } else {
         bottomSheetRef.current?.close();
+        showTabBar(); // Hiện lại tab bar khi bottom sheet đóng
       }
     }, 100);
 
     return () => clearTimeout(timer);
-  }, [show]);
+  }, [show, hideTabBar, showTabBar]);
   // Snap points: 50% chiều cao màn hình
   const snapPoints = useMemo(() => ["25%", "50%"], []);
   const renderBackdrop = useCallback(
@@ -107,7 +111,10 @@ const FriendOption: React.FC<FriendOption> = ({
   // Đóng bottom sheet khi prop visible = false
   // Khi người dùng vuốt xuống hoặc bấm backdrop
   const handleSheetChanges = (index: number) => {
-    if (index === -1) setShow(false);
+    if (index === -1) {
+      setShow(false);
+      showTabBar(); // Hiện lại tab bar khi bottom sheet đóng
+    }
   };
 
   return friendInfo ? (

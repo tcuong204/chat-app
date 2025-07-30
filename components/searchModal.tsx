@@ -12,7 +12,7 @@ import ContactCard from "./contactCard";
 import SearchInput from "./searchInput";
 
 interface Contact {
-  id: number;
+  id: string;
   name: string;
   avatar: string;
   type: "contact" | "group";
@@ -26,7 +26,7 @@ interface SearchModalProps {
   contacts: Contact[];
   searchQuery: string;
   onSearchChange: (query: string) => void;
-  onContactPress: (id: number) => void;
+  onContactPress: (id: string) => void;
   recentSearches?: string[];
   onRecentSearchPress?: (query: string) => void;
 }
