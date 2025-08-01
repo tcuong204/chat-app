@@ -183,8 +183,8 @@ class SocketManager {
             }
 
             // Create socket connection
-            this.socket = io("http://192.168.0.102:3000/chat", {
-              //http://192.168.0.102:3000
+            this.socket = io("http://192.168.1.11:3000/chat", {
+              //http://192.168.1.11:3000
               auth: {
                 token: accessToken,
                 deviceId: "mobile_" + Math.random().toString(36).substr(2, 9),
@@ -228,7 +228,7 @@ class SocketManager {
               reject(error);
             });
 
-            // Setup event listeners AFTER connection events
+            // Setup event listeners AFTER connection events but don't duplicate connection events
             this.setupEventListeners();
           })
           .catch((error) => {
@@ -245,38 +245,49 @@ class SocketManager {
   private setupEventListeners() {
     if (!this.socket) return;
 
-    // Remove all existing listeners to avoid duplicates
-    this.socket.removeAllListeners();
+    // Only remove non-connection listeners to avoid duplicates
+    // Don't remove connection listeners as they're already set up in connect()
 
-    // Connection events - Don't duplicate these as they're already set up in connect()
-    this.socket.on("connect", () => {
-      console.log("✅ Connected to socket server");
-      this.isConnected = true;
-      this.reconnectAttempts = 0;
-      this.notifyConnectionListeners(true);
-    });
+    // File sharing events
+    this.socket.off("file_shared");
+    this.socket.off("quick_file_shared");
+    this.socket.off("quick_share_file_error");
+    this.socket.off("batch_files_shared");
+    this.socket.off("new_file_message");
+    this.socket.off("new_batch_files_message");
 
-    this.socket.on("disconnect", (reason) => {
-      console.log("❌ Disconnected from socket server:", reason);
-      this.isConnected = false;
-      this.notifyConnectionListeners(false);
+    // Message events
+    this.socket.off("message.sent");
+    this.socket.off("message_created");
+    this.socket.off("message.edited");
+    this.socket.off("message.deleted");
+    this.socket.off("message.read");
+    this.socket.off("message.status.updated");
+    this.socket.off("message.delivery.track");
+    this.socket.off("message_received");
+    this.socket.off("new_message");
+    this.socket.off("offline_messages_batch");
 
-      // Auto-reconnect if not manually disconnected
-      if (reason !== "io client disconnect") {
-        console.log("🔄 Attempting to reconnect...");
-        setTimeout(() => {
-          this.connect().catch(console.error);
-        }, 2000);
-      }
-    });
+    // Typing events
+    this.socket.off("typing_started");
+    this.socket.off("typing_stopped");
+    this.socket.off("typing_start");
+    this.socket.off("typing_stop");
 
-    this.socket.on("connect_error", (error) => {
-      console.error("❌ Socket connection error:", error);
-      this.reconnectAttempts++;
-      if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-        console.log("❌ Max reconnection attempts reached");
-      }
-    });
+    // User presence events
+    this.socket.off("user_online");
+    this.socket.off("user_offline");
+
+    // Conversation events
+    this.socket.off("conversation_updated");
+    this.socket.off("conversation_last_message_update");
+    this.socket.off("conversations_last_messages_response");
+
+    // Reconnection events (keep existing ones, don't duplicate)
+    this.socket.off("reconnect");
+    this.socket.off("reconnect_attempt");
+    this.socket.off("reconnect_error");
+    this.socket.off("reconnect_failed");
     // File sharing events
     this.socket.on("file_shared", (data) => {
       console.log("📎 File shared:", data);
@@ -309,8 +320,24 @@ class SocketManager {
     });
     this.socket.on("new_file_message", (data) => {
       console.log("📎 New file message:", data);
-
+      
+      // Notify both message listeners (for adding to chat) and file listeners
       this.notifyMessageListeners({ senderId: data.senderId, ...data });
+      this.notifyFileListeners({
+        type: "new_file_message",
+        ...data,
+      });
+    });
+
+    this.socket.on("new_batch_files_message", (data) => {
+      console.log("📎 New batch files message:", data);
+      
+      // Notify both message listeners (for adding to chat) and file listeners
+      this.notifyMessageListeners({ senderId: data.senderId, ...data });
+      this.notifyFileListeners({
+        type: "new_batch_files_message",
+        ...data,
+      });
     });
     // Message events - New format
     this.socket.on("message.sent", (data) => {
@@ -576,7 +603,13 @@ class SocketManager {
       "📨 Requesting last messages for conversations:",
       conversationIds
     );
+    console.log("📨 Emitting get_conversations_last_messages event");
     this.socket.emit("get_conversations_last_messages", { conversationIds });
+
+    // Add debug listener to confirm server response
+    this.socket.once("conversations_last_messages_response", (response) => {
+      console.log("📨 [DEBUG] Received conversations_last_messages_response:", response);
+    });
   }
 
   // Event listeners management
@@ -667,6 +700,8 @@ class SocketManager {
   }
 
   private notifyConversationListeners(data: any) {
+    console.log("📢 Notifying conversation listeners:", data);
+    console.log("📢 Number of listeners:", this.conversationListeners.length);
     this.conversationListeners.forEach((callback) => callback(data));
   }
 

@@ -314,6 +314,8 @@ export default function Index() {
           [data.conversationId]: data.lastMessage,
         };
         console.log("📨 Updated lastMessages state:", updated);
+        console.log("📨 Previous state:", prev);
+        console.log("📨 New data:", data);
         return updated;
       });
       setUnreadCounts((prev) => {
@@ -341,6 +343,7 @@ export default function Index() {
           "📨 Processing update for conversation:",
           update.conversationId
         );
+        console.log("📨 Update data:", update);
         newLastMessages[update.conversationId] = update.lastMessage;
         newUnreadCounts[update.conversationId] = update.unreadCount;
       });
@@ -369,16 +372,15 @@ export default function Index() {
         console.log("🔌 Attempting to connect socket in index...");
         await socketManager.connect();
 
-        // Set up event listeners
-        socketManager
-          .getSocket()
-          ?.on("conversation_last_message_update", handleLastMessageUpdate);
-        socketManager
-          .getSocket()
-          ?.on(
-            "conversations_last_messages_response",
-            handleLastMessagesResponse
-          );
+        // Set up event listeners using SocketManager methods (more reliable)
+        socketManager.onConversationEvent((data) => {
+          console.log("📨 Conversation event received in index:", data);
+          if (data.type === "last_message_update") {
+            handleLastMessageUpdate(data);
+          } else if (data.type === "last_messages_response") {
+            handleLastMessagesResponse(data);
+          }
+        });
 
         console.log("✅ Socket connected and listeners set up in index");
         console.log(
@@ -394,15 +396,9 @@ export default function Index() {
 
     // Cleanup
     return () => {
-      socketManager
-        .getSocket()
-        ?.off("conversation_last_message_update", handleLastMessageUpdate);
-      socketManager
-        .getSocket()
-        ?.off(
-          "conversations_last_messages_response",
-          handleLastMessagesResponse
-        );
+      // Don't clear all listeners as it affects other components
+      // Instead, properly manage conversation listeners
+      console.log("🧹 Cleaning up index.tsx socket listeners");
     };
   }, [handleLastMessageUpdate, handleLastMessagesResponse]); // Removed chatData dependency
 
@@ -423,10 +419,15 @@ export default function Index() {
     if (socketManager.isSocketConnected() && chatData.length > 0) {
       const conversationIds = chatData.map((conv: any) => conv.id);
       console.log(
-        "🔄 Socket connected, requesting last messages for:",
+        "🔄 Socket connected and chatData available, requesting last messages:",
         conversationIds
       );
       socketManager.requestLastMessages(conversationIds);
+    } else {
+      console.log("⚠️ Cannot request last messages:", {
+        socketConnected: socketManager.isSocketConnected(),
+        chatDataLength: chatData.length,
+      });
     }
   }, [chatData]); // Only depend on chatData, removed lastMessages and unreadCounts
 
@@ -501,9 +502,9 @@ export default function Index() {
 
     const lastMessageTime = socketLastMessage
       ? new Date(socketLastMessage.timestamp).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        })
+        hour: "2-digit",
+        minute: "2-digit",
+      })
       : item.time || "";
 
     return (
