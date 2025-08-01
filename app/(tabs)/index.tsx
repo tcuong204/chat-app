@@ -28,6 +28,7 @@ import {
 import { getFriends } from "@/api/friendApi";
 import { images } from "@/constants/images";
 import { showSuccess } from "@/utils/customToast";
+import { getAccount } from "@/utils/secureStore";
 import {
   ContactCard,
   Header,
@@ -55,6 +56,7 @@ interface LastMessageUpdatePayload {
 
 export default function Index() {
   const swipeRefs = useRef<Map<number, Swipeable>>(new Map());
+  const [name, setName] = useState("");
   const [openRow, setOpenRow] = useState<number | null>(null);
   const [isSwipingId, setIsSwipingId] = useState<number | null>(null);
   const [showNewMessageModal, setShowNewMessageModal] = useState(false);
@@ -95,7 +97,10 @@ export default function Index() {
     () => tabs.find((tab) => tab.active)?.id || "all",
     [tabs]
   );
-
+  const getUser = async () => {
+    const res = await getAccount();
+    setName((res as any).user?.fullName);
+  };
   const handledeleteConversation = async (conversationId: string) => {
     Alert.alert("Xóa nhóm", "Bạn có chắc chắn muốn xóa nhóm này?", [
       {
@@ -174,7 +179,8 @@ export default function Index() {
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchConversations();
-
+    getUser();
+    getFriends();
     // Also request fresh last messages from socket
     if (chatData.length > 0 && socketManager.isSocketConnected()) {
       const conversationIds = chatData.map((conv: any) => conv.id);
@@ -409,6 +415,7 @@ export default function Index() {
   useEffect(() => {
     fetchConversations();
     fetchFriends();
+    getUser();
   }, [tabs, fetchConversations, fetchFriends]); // Add dependencies
 
   // Request last messages when socket connects and chatData changes
@@ -536,7 +543,7 @@ export default function Index() {
           <View className="flex flex-col h-full bg-gray-50">
             {/* Header - Now handles its own search mode */}
             <Header
-              title="Johan"
+              title={name}
               subtitle="Hello,"
               showSearch={true}
               showNewMessage={true}

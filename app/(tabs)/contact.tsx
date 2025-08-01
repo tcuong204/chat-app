@@ -13,7 +13,7 @@ import {
   GestureHandlerRootView,
   RefreshControl,
 } from "react-native-gesture-handler";
-import { getFriends } from "../../api/friendApi";
+import { getFriendRequests, getFriends } from "../../api/friendApi";
 import { ContactCard, Header, Search } from "../../components";
 
 // Interface cho user trong friend
@@ -54,11 +54,23 @@ const ContactScreen = () => {
     new Animated.Value(0), // Các tab khác
   ]).current;
   const [refreshing, setRefreshing] = useState(false);
-
+  const [newRequest, setNewRequest] = useState(0);
+  const fetchRequests = async () => {
+    try {
+      const res = await getFriendRequests({
+        type: "incoming",
+        status: "PENDING",
+      });
+      setNewRequest(res?.total || 0);
+    } catch (e) {
+      setNewRequest(0);
+    }
+  };
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     // Giả lập gọi API
     fetchFriends();
+    fetchRequests();
     setTimeout(() => {
       setRefreshing(false);
     }, 2000);
@@ -72,6 +84,7 @@ const ContactScreen = () => {
     setSelectedFriend(friendInfo);
     setShowOptionModal(true);
   };
+
   const fetchFriends = async () => {
     setLoading(true);
     try {
@@ -80,6 +93,7 @@ const ContactScreen = () => {
       // setContactsData(res);
       // Nếu API trả về object có field users hoặc friends
       setContactsData(res.friends || res.users || res || []);
+      setNewRequest(res?.total);
     } catch (e) {
       setContactsData([]);
     }
@@ -87,6 +101,8 @@ const ContactScreen = () => {
   };
   useEffect(() => {
     fetchFriends();
+
+    fetchRequests();
   }, []);
 
   // Filter contacts based on search query
@@ -187,6 +203,7 @@ const ContactScreen = () => {
           title="Danh bạ"
           // showAddButton={true}
           onAddPress={() => console.log("Add contact")}
+          totalFriendRequest={newRequest}
           showFriendRequest={true}
         />
 
