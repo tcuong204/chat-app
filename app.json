@@ -41,11 +41,14 @@
           "appID": "YOUR_FACEBOOK_APP_ID",
           "displayName": "YOUR_APP_DISPLAY_NAME"
         }
-      ]
+      ],
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true
     },
-    "assetBundlePatterns": ["assets/fonts/*"]
+    "assetBundlePatterns": [
+      "assets/fonts/*"
+    ]
   }
 }

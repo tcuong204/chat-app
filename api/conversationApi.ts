@@ -23,20 +23,15 @@ export interface GroupParams {
 }
 // Create direct conversation
 export const createDirectConversation = async (participantId: string) => {
-  const response = await axiosInstance.post(
-    "/api/v1/conversations/create-direct",
-    {
-      participantId,
-    }
-  );
+  const response = await axiosInstance.post("/conversations/create-direct", {
+    participantId,
+  });
   return response.data;
 };
 
 // Get conversation details
 export const getConversationDetails = async (conversationId: string) => {
-  const response = await axiosInstance.get(
-    `/api/v1/conversations/${conversationId}`
-  );
+  const response = await axiosInstance.get(`/conversations/${conversationId}`);
   return response.data;
 };
 
@@ -55,23 +50,20 @@ export const updateConversation = async (
 // Delete conversation (groups only)
 export const deleteConversation = async (conversationId: string) => {
   const response = await axiosInstance.delete(
-    `/api/v1/conversations/${conversationId}`
+    `/conversations/${conversationId}`
   );
   return response.data;
 };
 
 // Create group conversation
 export const createGroupConversation = async (data: GroupParams) => {
-  const response = await axiosInstance.post(
-    "/api/v1/conversations/group",
-    data
-  );
+  const response = await axiosInstance.post("/conversations/group", data);
   return response.data;
 };
 
 // Get user conversations
 export const getUserConversations = async (params?: ConversationParams) => {
-  const response = await axiosInstance.get("/api/v1/conversations", {
+  const response = await axiosInstance.get("/conversations", {
     params: {
       type: params?.type || "all",
       //   unReadOnly: params?.unReadOnly || false,

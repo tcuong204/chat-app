@@ -100,6 +100,33 @@ const NewMessageModal: React.FC<NewMessageModalProps> = ({
     [onContactPress]
   );
 
+  const renderFriendItem = useCallback(
+    ({ item }: { item: any }) => (
+      <TouchableOpacity
+        className="flex flex-row items-center p-4 border-b border-gray-100"
+        onPress={(id) => onContactPress(item.id)}
+      >
+        <Image
+          source={
+            typeof item.user.avatarUrl === "string"
+              ? { uri: item.user.avatarUrl }
+              : images.defaultAvatar
+          }
+          style={{ width: 50, height: 50 }}
+          className="w-12 h-12 rounded-full mr-3"
+        />
+        <View className="flex-1">
+          <Text className="font-semibold text-gray-800">
+            {item.user.fullName || item.user.name}
+          </Text>
+          <Text className="text-sm text-gray-500">
+            {item.user.phoneNumber || "No phone number"}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    ),
+    [onContactPress]
+  );
   const bottomSheetRef = useRef<BottomSheet>(null);
 
   useEffect(() => {
@@ -238,12 +265,18 @@ const NewMessageModal: React.FC<NewMessageModalProps> = ({
                       ))}
                   </View>
                 </ScrollView>
+                <FlatList
+                  data={friends}
+                  renderItem={renderFriendItem}
+                  keyExtractor={(item) => item?.user.id.toString()}
+                  showsVerticalScrollIndicator={false}
+                />
               </View>
             ) : (
               <FlatList
                 data={contacts}
                 renderItem={renderContactItem}
-                keyExtractor={(item) => item.id.toString()}
+                keyExtractor={(item) => item?.id.toString()}
                 showsVerticalScrollIndicator={false}
               />
             )}

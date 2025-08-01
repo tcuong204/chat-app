@@ -6,4 +6,5 @@ export { default as NewMessageModal } from "./newMessages";
 export { default as Search } from "./search";
 export { default as SearchInput } from "./searchInput";
 export { default as SearchModal } from "./searchModal";
+export { default as SecureImage } from "./secureImage";
 export { default as TabNavigation } from "./tabNavigation";

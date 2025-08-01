@@ -1,7 +1,8 @@
 import { search } from "@/api/searchApi";
+import { socketManager } from "@/utils/socket";
 import { useDebounce } from "@/utils/useDebounce";
 import { router } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Animated,
@@ -36,6 +37,22 @@ import {
 } from "../../components";
 import { Friend } from "./contact";
 
+interface LastMessageUpdatePayload {
+  conversationId: string;
+  lastMessage: {
+    messageId: string;
+    content: string;
+    messageType: string;
+    senderId: string;
+    senderName: string;
+    timestamp: number;
+    filesInfo?: any[];
+    fileInfo?: any;
+  };
+  unreadCount: number;
+  timestamp: number;
+}
+
 export default function Index() {
   const swipeRefs = useRef<Map<number, Swipeable>>(new Map());
   const [openRow, setOpenRow] = useState<number | null>(null);
@@ -49,17 +66,10 @@ export default function Index() {
   const [refreshing, setRefreshing] = useState(false);
   const [contactsData, setContactsData] = useState<Friend[]>([]);
   const [tabs, setTabs] = useState([
-    { id: "all", label: "Tất cả", active: true },
-    { id: "group", label: "Nhóm", active: false },
-    { id: "direct", label: "Liên hệ", active: false },
+    { id: "all" as const, label: "Tất cả", active: true },
+    { id: "group" as const, label: "Nhóm", active: false },
+    { id: "direct" as const, label: "Liên hệ", active: false },
   ]);
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    fetchConversations();
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 2000);
-  }, []);
   type Chat = {
     id: string;
     name: string;
@@ -74,7 +84,18 @@ export default function Index() {
 
   const [chatData, setChatData] = useState<Chat[]>([]);
   const [loading, setLoading] = useState(false);
-  const activeTab = tabs.find((tab) => tab.active)?.id || "all";
+  const [lastMessages, setLastMessages] = useState<{
+    [conversationId: string]: any;
+  }>({});
+  const [unreadCounts, setUnreadCounts] = useState<{
+    [conversationId: string]: number;
+  }>({});
+
+  const activeTab = useMemo(
+    () => tabs.find((tab) => tab.active)?.id || "all",
+    [tabs]
+  );
+
   const handledeleteConversation = async (conversationId: string) => {
     Alert.alert("Xóa nhóm", "Bạn có chắc chắn muốn xóa nhóm này?", [
       {
@@ -99,7 +120,7 @@ export default function Index() {
       },
     ]);
   };
-  const fetchConversations = async () => {
+  const fetchConversations = useCallback(async () => {
     try {
       setLoading(true);
       const response = await getUserConversations({
@@ -112,13 +133,59 @@ export default function Index() {
         unReadOnly: false,
       });
 
-      setChatData(response.conversations || []);
+      const conversations = response.conversations || [];
+      setChatData(conversations);
+
+      // Request last messages for all conversations from socket
+      if (conversations.length > 0) {
+        const conversationIds = conversations.map((conv: any) => conv.id);
+        console.log("📨 Conversations found:", conversationIds);
+
+        // Ensure socket is connected before requesting last messages
+        if (!socketManager.isSocketConnected()) {
+          console.log("🔌 Socket not connected, attempting to connect...");
+          try {
+            await socketManager.connect();
+            console.log("✅ Socket connected successfully");
+          } catch (error) {
+            console.error("❌ Failed to connect socket:", error);
+          }
+        }
+
+        if (socketManager.isSocketConnected()) {
+          socketManager.requestLastMessages(conversationIds);
+          console.log(
+            "📨 Requested last messages for conversations:",
+            conversationIds
+          );
+        } else {
+          console.log(
+            "⚠️ Socket still not connected, last messages will be requested later"
+          );
+        }
+      }
     } catch (error) {
       console.error("Error fetching conversations:", error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeTab]); // Add dependency array for useCallback
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchConversations();
+
+    // Also request fresh last messages from socket
+    if (chatData.length > 0 && socketManager.isSocketConnected()) {
+      const conversationIds = chatData.map((conv: any) => conv.id);
+      socketManager.requestLastMessages(conversationIds);
+    }
+
+    setTimeout(() => {
+      setRefreshing(false);
+    }, 2000);
+  }, [chatData, fetchConversations]); // Now fetchConversations is available
+
   const directConversation = async (participantId: string) => {
     try {
       const res = await createDirectConversation(participantId);
@@ -166,13 +233,23 @@ export default function Index() {
     directConversation(contactId);
   }, []);
 
-  const handleChatPress = useCallback((chatId: number) => {
-    router.push(`/messages/${chatId}`);
-  }, []);
+  const handleChatPress = useCallback(
+    (chatId: number) => {
+      // Clear unread count when entering conversation
+      if (unreadCounts[chatId] && unreadCounts[chatId] > 0) {
+        setUnreadCounts((prev) => ({
+          ...prev,
+          [chatId]: 0,
+        }));
+      }
+      router.push(`/messages/${chatId}`);
+    },
+    [unreadCounts]
+  );
 
-  const handleDeleteChat = useCallback((chatId: string) => {
+  const handleDeleteChat = useCallback((chatId: number) => {
     // Handle delete chat logic
-    handledeleteConversation(chatId);
+    handledeleteConversation(chatId.toString());
     fetchConversations();
   }, []);
 
@@ -194,7 +271,7 @@ export default function Index() {
   const debouncedQuery = useDebounce(searchQuery, 500); // 500ms debounce
 
   // Filter contacts based on search query (chỉ dùng khi không có query)
-  const fetchFriends = async () => {
+  const fetchFriends = useCallback(async () => {
     setLoading(true);
     try {
       const res = await getFriends();
@@ -206,7 +283,7 @@ export default function Index() {
       setContactsData([]);
     }
     setLoading(false);
-  };
+  }, []); // No dependencies needed for fetchFriends
   useEffect(() => {
     if (debouncedQuery.trim() === "") {
       setSearchResults([]);
@@ -217,13 +294,168 @@ export default function Index() {
       setSearchResults(res.users || []);
     });
   }, [debouncedQuery]);
+  // Socket event handlers for last message updates
+  const handleLastMessageUpdate = useCallback(
+    (data: LastMessageUpdatePayload) => {
+      console.log("📨 Last message update received in index:", data);
+      console.log("📨 Conversation ID:", data.conversationId);
+      console.log("📨 Last message:", data.lastMessage);
+      console.log("📨 Unread count:", data.unreadCount);
+
+      setLastMessages((prev) => {
+        const updated = {
+          ...prev,
+          [data.conversationId]: data.lastMessage,
+        };
+        console.log("📨 Updated lastMessages state:", updated);
+        return updated;
+      });
+      setUnreadCounts((prev) => {
+        const updated = {
+          ...prev,
+          [data.conversationId]: data.unreadCount,
+        };
+        console.log("📨 Updated unreadCounts state:", updated);
+        return updated;
+      });
+    },
+    []
+  );
+
+  const handleLastMessagesResponse = useCallback(
+    (data: { updates: LastMessageUpdatePayload[] }) => {
+      console.log("📨 Last messages response received in index:", data);
+      console.log("📨 Number of updates:", data.updates.length);
+
+      const newLastMessages: { [conversationId: string]: any } = {};
+      const newUnreadCounts: { [conversationId: string]: number } = {};
+
+      data.updates.forEach((update) => {
+        console.log(
+          "📨 Processing update for conversation:",
+          update.conversationId
+        );
+        newLastMessages[update.conversationId] = update.lastMessage;
+        newUnreadCounts[update.conversationId] = update.unreadCount;
+      });
+
+      console.log("📨 New last messages:", newLastMessages);
+      console.log("📨 New unread counts:", newUnreadCounts);
+
+      setLastMessages((prev) => {
+        const updated = { ...prev, ...newLastMessages };
+        console.log("📨 Updated lastMessages state:", updated);
+        return updated;
+      });
+      setUnreadCounts((prev) => {
+        const updated = { ...prev, ...newUnreadCounts };
+        console.log("📨 Updated unreadCounts state:", updated);
+        return updated;
+      });
+    },
+    []
+  );
+
+  // Connect to socket and set up listeners
+  useEffect(() => {
+    const connectSocket = async () => {
+      try {
+        console.log("🔌 Attempting to connect socket in index...");
+        await socketManager.connect();
+
+        // Set up event listeners
+        socketManager
+          .getSocket()
+          ?.on("conversation_last_message_update", handleLastMessageUpdate);
+        socketManager
+          .getSocket()
+          ?.on(
+            "conversations_last_messages_response",
+            handleLastMessagesResponse
+          );
+
+        console.log("✅ Socket connected and listeners set up in index");
+        console.log(
+          "🔌 Socket connection info:",
+          socketManager.getConnectionInfo()
+        );
+      } catch (error) {
+        console.error("❌ Failed to connect socket in index:", error);
+      }
+    };
+
+    connectSocket();
+
+    // Cleanup
+    return () => {
+      socketManager
+        .getSocket()
+        ?.off("conversation_last_message_update", handleLastMessageUpdate);
+      socketManager
+        .getSocket()
+        ?.off(
+          "conversations_last_messages_response",
+          handleLastMessagesResponse
+        );
+    };
+  }, [handleLastMessageUpdate, handleLastMessagesResponse]); // Removed chatData dependency
+
+  // Initial data fetch
   useEffect(() => {
     fetchConversations();
     fetchFriends();
-  }, [tabs]);
+  }, [fetchConversations, fetchFriends]); // Add dependencies
+
   useEffect(() => {
     fetchConversations();
-  }, []);
+    fetchFriends();
+  }, [tabs, fetchConversations, fetchFriends]); // Add dependencies
+
+  // Request last messages when socket connects and chatData changes
+  useEffect(() => {
+    if (socketManager.isSocketConnected() && chatData.length > 0) {
+      const conversationIds = chatData.map((conv: any) => conv.id);
+      console.log(
+        "🔄 Socket connected, requesting last messages for:",
+        conversationIds
+      );
+      socketManager.requestLastMessages(conversationIds);
+    }
+  }, [chatData]); // Only depend on chatData, removed lastMessages and unreadCounts
+
+  // Request last messages after socket connection is established
+  useEffect(() => {
+    const requestInitialMessages = () => {
+      if (chatData.length > 0) {
+        const conversationIds = chatData.map((conv: any) => conv.id);
+        console.log(
+          "🔄 Requesting initial last messages after socket setup:",
+          conversationIds
+        );
+        socketManager.requestLastMessages(conversationIds);
+      }
+    };
+
+    const connectionHandler = (connected: boolean) => {
+      if (connected) {
+        console.log("✅ Socket connected, requesting initial messages");
+        requestInitialMessages();
+      }
+    };
+
+    // Listen for socket connection events
+    socketManager.onConnectionChange(connectionHandler);
+
+    // If already connected, request immediately
+    if (socketManager.isSocketConnected()) {
+      requestInitialMessages();
+    }
+
+    // Cleanup - remove connection listener
+    return () => {
+      socketManager.offConnectionChange(connectionHandler);
+    };
+  }, [chatData]);
   // Replace renderContactItem with renderUserItem for new API user shape
   const renderUserItem = ({ item }: { item: any }) => (
     <ContactCard
@@ -243,29 +475,55 @@ export default function Index() {
   );
 
   // Render chat item function
-  const renderChatItem = ({ item }: { item: any }) => (
-    <MessageCard
-      chat={{
-        id: item.id,
-        name: item.name || item.fullName,
-        lastMessage: item.lastMessage || "",
-        time: item.time || "",
-        avatar: item.avatarUrl || item.avatar || images.defaultAvatar,
-        online: item.isOnline || item.online,
-        typing: item.typing,
-        hasVoice: item.hasVoice,
-        pinned: item.pinned,
-      }}
-      onPress={handleChatPress}
-      onDelete={() => handleDeleteChat(item.id)}
-      onPin={handlePinChat}
-      openRow={openRow}
-      setOpenRow={setOpenRow}
-      isSwipingId={isSwipingId}
-      setIsSwipingId={setIsSwipingId}
-      swipeRef={swipeRefs}
-    />
-  );
+  const renderChatItem = ({ item }: { item: any }) => {
+    // Get last message from socket data or fallback to API data
+    const socketLastMessage = lastMessages[item.id];
+    const socketUnreadCount = unreadCounts[item.id] || 0;
+
+    console.log(`📱 Rendering chat item ${item.id}:`, {
+      itemId: item.id,
+      socketLastMessage: socketLastMessage,
+      socketUnreadCount: socketUnreadCount,
+      apiLastMessage: item.lastMessage,
+      apiTime: item.time,
+    });
+
+    const lastMessageContent = socketLastMessage
+      ? `${socketLastMessage.senderName}: ${socketLastMessage.content}`
+      : item.lastMessage || "";
+
+    const lastMessageTime = socketLastMessage
+      ? new Date(socketLastMessage.timestamp).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : item.time || "";
+
+    return (
+      <MessageCard
+        chat={{
+          id: item.id,
+          name: item.name || item.fullName,
+          lastMessage: lastMessageContent,
+          time: lastMessageTime,
+          avatar: item.avatarUrl || item.avatar || images.defaultAvatar,
+          online: item.isOnline || item.online,
+          typing: item.typing,
+          hasVoice: item.hasVoice,
+          pinned: item.pinned,
+          unreadCount: socketUnreadCount,
+        }}
+        onPress={handleChatPress}
+        onDelete={handleDeleteChat}
+        onPin={handlePinChat}
+        openRow={openRow}
+        setOpenRow={setOpenRow}
+        isSwipingId={isSwipingId}
+        setIsSwipingId={setIsSwipingId}
+        swipeRef={swipeRefs}
+      />
+    );
+  };
   return (
     <GestureHandlerRootView>
       <SafeAreaView className="flex-1 bg-white">

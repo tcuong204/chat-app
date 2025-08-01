@@ -2,6 +2,7 @@ import { createGroupConversation } from "@/api/conversationApi";
 import { Friend } from "@/app/(tabs)/contact";
 import { images } from "@/constants/images";
 import { showError, showSuccess } from "@/utils/customToast";
+import { getAccount } from "@/utils/secureStore";
 import AntDesign from "@expo/vector-icons/AntDesign";
 import BottomSheet, {
   BottomSheetBackdrop,
@@ -67,7 +68,7 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
   );
   const [groupName, setGroupName] = useState("");
   const { hideTabBar, showTabBar } = useTabBar();
-
+  const [user, setUser] = useState<SelectedContact | undefined>();
   const bottomSheetRef = useRef<BottomSheet>(null);
 
   useEffect(() => {
@@ -83,7 +84,23 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
 
     return () => clearTimeout(timer);
   }, [show, hideTabBar, showTabBar]);
-
+  const getUser = async () => {
+    const res = await getAccount();
+    const currentUser = (res as any).user;
+    if (currentUser) {
+      setUser(currentUser);
+      setSelectedContacts([
+        {
+          id: currentUser.id,
+          name: currentUser.fullName || currentUser.name,
+          avatar: currentUser.avatarUrl || images.defaultAvatar,
+        },
+      ]);
+    }
+  };
+  useEffect(() => {
+    getUser();
+  }, []);
   const snapPoints = useMemo(() => ["90%", "95%"], []);
 
   const renderBackdrop = useCallback(
@@ -131,17 +148,17 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
       return;
     }
 
-    if (selectedContacts.length === 0) {
-      showError("Vui lòng chọn ít nhất 1 thành viên");
+    if (selectedContacts.length <= 3) {
+      showError("Nhóm có tối thiểu 3 thành viên");
       return;
     }
-
+    const user = await getAccount();
     try {
       const memberIds = selectedContacts.map((contact) => contact.id);
       const response = await createGroupConversation({
         name: groupName,
         description: groupName,
-        participantIds: memberIds,
+        participantIds: [...memberIds, (user as any).user.id],
         settings: {
           allowMembersToAdd: true,
           allowAllToSend: true,
@@ -193,7 +210,16 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
             {item.user.phoneNumber || "No phone number"}
           </Text>
         </View>
-        <TouchableOpacity className="p-2">
+        <TouchableOpacity
+          className="p-2"
+          onPress={() =>
+            handleContactSelect(
+              item.user.id,
+              item.user.avatarUrl || images.defaultAvatar,
+              item.user.fullName || item.user.name
+            )
+          }
+        >
           <AntDesign name="plus" size={20} color="#3b82f6" />
         </TouchableOpacity>
       </TouchableOpacity>
@@ -202,25 +228,44 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
   );
 
   const renderSelectedContactItem = useCallback(
-    ({ item }: { item: any }) => (
-      <TouchableOpacity
-        className="flex flex-row items-center p-2 bg-blue-50 rounded-full mr-2 mb-2"
-        onPress={() => handleContactCancel(item.id)}
-      >
-        <Image
-          source={
-            typeof item.avatar === "string"
-              ? { uri: item.avatar }
-              : images.defaultAvatar
-          }
-          className="w-8 h-8 rounded-full mr-2"
-        />
-        <Text className="text-sm text-blue-600 mr-2">{item.name}</Text>
-        <TouchableOpacity>
-          <AntDesign name="close" size={16} color="#3b82f6" />
+    ({ item, index }: { item: any; index: number }) => {
+      const isFirstUser = index === 0;
+
+      return (
+        <TouchableOpacity
+          className="flex flex-row items-center p-2 bg-blue-50 rounded-full mr-2 mb-2"
+          onPress={() => {
+            if (!isFirstUser) handleContactCancel(item.id);
+          }}
+        >
+          <Image
+            source={
+              typeof item.avatar === "string"
+                ? { uri: item.avatar }
+                : images.defaultAvatar
+            }
+            className="w-8 h-8 rounded-full mr-2"
+          />
+          <Text
+            className={`text-sm ${
+              isFirstUser ? "text-gray-500" : "text-blue-600"
+            }  mr-2`}
+          >
+            {item.name}
+          </Text>
+
+          {!isFirstUser && (
+            <TouchableOpacity
+              onPress={() => {
+                if (!isFirstUser) handleContactCancel(item.id);
+              }}
+            >
+              <AntDesign name="close" size={16} color="#3b82f6" />
+            </TouchableOpacity>
+          )}
         </TouchableOpacity>
-      </TouchableOpacity>
-    ),
+      );
+    },
     [handleContactCancel]
   );
 

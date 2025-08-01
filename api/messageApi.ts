@@ -11,11 +11,12 @@ export interface MessageSender {
 
 export interface Message {
   id: string;
+  messageType?: string; // "text", "image", "video", etc.
   localId?: string;
   conversationId: string;
   senderId: string;
   sender: MessageSender;
-  content: string;
+  content: string | undefined;
   type:
     | "text"
     | "image"
@@ -27,14 +28,26 @@ export interface Message {
     | "sticker"
     | "system";
   attachments?: Array<{
-    fileId: string;
-    fileName: string;
-    mimeType: string;
-    fileSize: number;
+    fileId?: string;
+    fileName?: string;
+    originalName?: string;
+    fileSize?: number;
+    mimeType?: string;
+    downloadUrl?: string;
     thumbnailUrl?: string;
-    width?: number;
-    height?: number;
     duration?: number;
+    dimensions?: string;
+  }>;
+  fileInfo?: Array<{
+    fileId?: string;
+    fileName?: string;
+    originalName?: string;
+    fileSize?: number;
+    mimeType?: string;
+    downloadUrl?: string;
+    thumbnailUrl?: string;
+    duration?: number;
+    dimensions?: string;
   }>;
   replyToMessageId?: string;
   mentions?: string[];
@@ -46,7 +59,7 @@ export interface Message {
 export interface SendMessageRequest {
   localId?: string;
   conversationId: string;
-  content: string;
+  content?: string;
   type?:
     | "text"
     | "image"

@@ -1,5 +1,4 @@
 import { getFriendRequests, respondToFriendRequest } from "@/api/friendApi";
-import { Header } from "@/components";
 import FriendRequestCard from "@/components/friendRequestCard";
 import { images } from "@/constants/images";
 import { showError, showSuccess } from "@/utils/customToast";
@@ -58,7 +57,7 @@ interface FriendRequestResponse {
 
 const FriendRequests = () => {
   const [requests, setRequests] = useState<FriendRequestResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
 
   const fetchRequests = async () => {
@@ -130,11 +129,12 @@ const FriendRequests = () => {
         {loading ? (
           <ActivityIndicator size="large" style={{ marginTop: 40 }} />
         ) : requests?.total === 0 ? (
-          <View style={{ alignItems: "center", marginTop: 40 }}>
-            <ActivityIndicator size="small" />
+          <View style={{ alignItems: "center", marginTop: 5 }}>
             <View style={{ height: 12 }} />
-            <View>
-              <Header subtitle="" title="Không có lời mời nào" />
+            <View className="w-full flex flex-row justify-center bg-white">
+              <Text className="text-xl font-nunito text-gray-500 py-8">
+                Không có lời mời nào
+              </Text>
             </View>
           </View>
         ) : (

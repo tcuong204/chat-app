@@ -14,9 +14,10 @@ interface MessageCardProps {
     pinned?: boolean;
     typing?: boolean;
     hasVoice?: boolean;
+    unreadCount?: number;
   };
   onPress: (id: number) => void;
-  onDelete?: (id: string) => void;
+  onDelete?: (id: number) => void;
   onPin?: (id: number) => void;
   openRow: number | null;
   setOpenRow: (id: number | null) => void;
@@ -112,7 +113,9 @@ const MessageCard: React.FC<MessageCardProps> = ({
   return (
     <Swipeable
       ref={(ref) => {
-        swipeRef.current.set(chat.id, ref);
+        if (ref) {
+          swipeRef.current.set(chat.id, ref);
+        }
       }}
       renderRightActions={renderRightActions}
       overshootRight={false}
@@ -202,9 +205,18 @@ const MessageCard: React.FC<MessageCardProps> = ({
                 </Text>
               )}
             </View>
-            <Text className="text-gray-500 text-sm font-nunito">
-              {chat.time}
-            </Text>
+            <View className="flex items-end">
+              <Text className="text-gray-500 text-sm font-nunito">
+                {chat.time}
+              </Text>
+              {chat.unreadCount && chat.unreadCount > 0 && (
+                <View className="mt-1 bg-red-500 rounded-full px-2 py-1 min-w-[20px] items-center">
+                  <Text className="text-white text-xs font-bold">
+                    {chat.unreadCount > 99 ? "99+" : chat.unreadCount}
+                  </Text>
+                </View>
+              )}
+            </View>
           </View>
         </View>
       </TouchableOpacity>
