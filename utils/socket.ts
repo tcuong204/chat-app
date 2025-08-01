@@ -320,7 +320,7 @@ class SocketManager {
     });
     this.socket.on("new_file_message", (data) => {
       console.log("📎 New file message:", data);
-      
+
       // Notify both message listeners (for adding to chat) and file listeners
       this.notifyMessageListeners({ senderId: data.senderId, ...data });
       this.notifyFileListeners({
@@ -331,7 +331,7 @@ class SocketManager {
 
     this.socket.on("new_batch_files_message", (data) => {
       console.log("📎 New batch files message:", data);
-      
+
       // Notify both message listeners (for adding to chat) and file listeners
       this.notifyMessageListeners({ senderId: data.senderId, ...data });
       this.notifyFileListeners({

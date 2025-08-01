@@ -718,7 +718,7 @@ const MessageScreen = () => {
           createdAt: new Date(data.timestamp).toISOString(),
           updatedAt: new Date(data.timestamp).toISOString(),
         };
-        
+
         console.log("📎 Adding file message to chat:", fileMessage);
         handleNewMessage(fileMessage);
       }
@@ -762,7 +762,7 @@ const MessageScreen = () => {
           createdAt: new Date(data.timestamp).toISOString(),
           updatedAt: new Date(data.timestamp).toISOString(),
         };
-        
+
         console.log("📎 Adding batch files message to chat:", fileMessage);
         handleNewMessage(fileMessage);
       }
