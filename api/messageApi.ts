@@ -51,7 +51,7 @@ export interface Message {
   }>;
   replyToMessageId?: string;
   mentions?: string[];
-  status: "sent" | "delivered" | "read";
+  status: "sent" | "delivered" | "read" | "processed" | "failed" | "";
   createdAt: string;
   updatedAt: string;
 }

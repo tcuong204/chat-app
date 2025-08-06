@@ -6,8 +6,10 @@ import {
   sendMessage,
 } from "@/api/messageApi";
 import { uploadFile } from "@/api/uploadFile";
+import AuthenticatedMediaViewer from "@/components/authenticatedImage";
 import { images } from "@/constants/images";
 import { showError, showSuccess } from "@/utils/customToast";
+import { openOfficeFile } from "@/utils/openOfficeFile";
 import { getAccount } from "@/utils/secureStore";
 import { socketManager } from "@/utils/socket";
 import AntDesign from "@expo/vector-icons/AntDesign";
@@ -49,30 +51,7 @@ interface NewMessagePayload {
   filesInfo?: any[];
   fileInfo?: any; // fallback cho server cũ
 }
-const replaceLocalhost = (url: string) => {
-  return url.replace("localhost:3000", "192.168.1.11:3000");
-};
-const AuthenticatedImage = ({
-  imageUrl,
-  token,
-}: {
-  imageUrl: string;
-  token: string | null;
-}) => {
-  const processedUrl = replaceLocalhost(imageUrl);
 
-  return (
-    <Image
-      source={{
-        uri: processedUrl,
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }}
-      style={{ width: 200, height: 200 }}
-    />
-  );
-};
 interface LastMessageUpdatePayload {
   conversationId: string;
   lastMessage: {
@@ -150,11 +129,11 @@ const MessageScreen = () => {
   const params = useLocalSearchParams();
   const [token, setToken] = useState<string | null>(null);
   const conversationId = params.id as string;
-
   // Optimistic UI: Store local messages before server confirmation
   const [localMessages, setLocalMessages] = useState<{
     [key: string]: Message;
   }>({});
+  console.log("messsages", messages);
 
   const handleFocus = () => {
     setInputFocused(true);
@@ -198,14 +177,13 @@ const MessageScreen = () => {
         1,
         50
       );
-      console.log("📨 API Response:", response);
+      // console.log("📨 API Response:", response);
 
       // API trả về { messages: [...], pagination: {...} }
       const messageList = response.messages || [];
-      console.log("📝 Messages loaded:", messageList.length);
+      // console.log("📝 Messages loaded:", messageList.length);
 
       setMessages(messageList.reverse()); // Reverse to show newest at bottom
-      console.log(messages);
     } catch (error) {
       console.error("Error fetching messages:", error);
       showError("Không thể tải tin nhắn");
@@ -215,54 +193,42 @@ const MessageScreen = () => {
   };
   const handleNewMessage = useCallback(
     (newMessage: Message) => {
-      if (!newMessage) {
-        console.error("❌ No message data received");
-        return;
-      }
-      if (newMessage.conversationId !== conversationId) {
-        console.log(
-          `⚠️ Message ignored, wrong conversation: ${newMessage.conversationId} vs ${conversationId}`
-        );
-        return;
-      }
+      if (!newMessage || newMessage.conversationId !== conversationId) return;
+
       console.log("🎯 Processing new message:", newMessage);
 
       setMessages((prev) => {
-        // Check duplicate by ID or localId
-        const exists = prev.some(
+        const index = prev.findIndex(
           (msg) =>
-            msg.id === newMessage.id ||
-            (newMessage.localId && msg.localId === newMessage.localId)
+            (newMessage.localId && msg.localId === newMessage.localId) ||
+            msg.id === newMessage.id
         );
-        if (exists) {
-          console.log("⚠️ Message already exists");
-          return prev;
+
+        if (index !== -1) {
+          // 🔁 Cập nhật lại optimistic message bằng dữ liệu từ server
+          const updated = [...prev];
+          updated[index] = {
+            ...updated[index],
+            ...newMessage,
+            status: "processed",
+          };
+          return updated;
         }
 
-        console.log("➕ Adding message to list");
+        // ➕ Thêm mới nếu không trùng
         return [...prev, newMessage];
       });
 
-      // Remove from localMessages if this is a message we just sent
+      // Xóa khỏi localMessages nếu đã xử lý xong
       setLocalMessages((prev) => {
         const newLocal = { ...prev };
-        // Find and remove local message
-        Object.keys(newLocal).forEach((localId) => {
-          const localMsg = newLocal[localId];
-          if (
-            localMsg.content === newMessage.content &&
-            localMsg.conversationId === newMessage.conversationId &&
-            (localMsg.localId === newMessage.localId ||
-              localMsg.id === newMessage.id)
-          ) {
-            console.log("🔄 Removing local message:", localId);
-            delete newLocal[localId];
-          }
-        });
+        if (newMessage.localId && newLocal[newMessage.localId]) {
+          delete newLocal[newMessage.localId];
+        }
         return newLocal;
       });
 
-      // Auto scroll
+      // Auto scroll xuống cuối
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: true });
       }, 100);
@@ -372,6 +338,7 @@ const MessageScreen = () => {
       await recording.stopAndUnloadAsync();
       const uri = recording.getURI();
       setRecording(null);
+      console.log("Recording stopped, file URI:", uri);
 
       if (uri) {
         await handleFileUpload(uri, "audio");
@@ -391,19 +358,34 @@ const MessageScreen = () => {
       setUploading(true);
 
       const response = await uploadFile(uri);
-      console.log("file", response);
 
       // Prepare message data based on file type
       const messageData = {
+        id: `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         fileId: response.fileId,
         conversationId: conversationId,
         message: message,
+        messageType: response.mimeType.startsWith("image/")
+          ? "image"
+          : response.mimeType.startsWith("audio/")
+          ? "audio"
+          : response.mimeType.startsWith("video/")
+          ? "video"
+          : "file", // ✅ fallback cho pdf, docx, zip...
+        localId: `quickfile_${Date.now()}_${Math.random()
+          .toString(36)
+          .substr(2, 9)}`,
         fileMetadata: {
           fileName: response.fileName,
           fileId: response.fileId,
           fileSize: response.fileSize,
-          mimeType:
-            response.mimeType === "document" ? "file" : response.mimeType,
+          mimeType: response.mimeType.startsWith("image/")
+            ? "image"
+            : response.mimeType.startsWith("audio/")
+            ? "audio"
+            : response.mimeType.startsWith("video/")
+            ? "video"
+            : "file", // ✅ fallback cho pdf, docx, zip...
           downloadUrl: response.downloadUrl,
           thumbnailUrl: response.thumbnailUrl,
           duration: response.duration,
@@ -412,35 +394,35 @@ const MessageScreen = () => {
       };
 
       // Create optimistic message
-      const optimisticMessage: Message = {
-        id: `local_${Date.now()}`,
-        localId: `local_${Date.now()}`,
-        conversationId,
-        senderId: currentUserId || "current_user",
-        sender: {
-          id: currentUserId || "current_user",
-          fullName: "Bạn",
-          username: currentUserId || "current_user",
-          avatarUrl: null,
-          isOnline: true,
-          lastSeen: new Date().toISOString(),
-        },
-        content: (response.fileName as string) || "Tệp đính kèm",
-        type: type,
-        attachments: [
-          // Đảm bảo có mảng attachments
-          {
-            fileId: response.fileId,
-            fileName: response.fileName, // Sử dụng tên file thực tế
-            fileSize: response.fileSize,
-            mimeType: response.mimeType,
-            downloadUrl: response.downloadUrl,
-          },
-        ],
-        status: "sent",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+      // const optimisticMessage: Message = {
+      //   id: `local_${Date.now()}`,
+      //   localId: `local_${Date.now()}`,
+      //   conversationId,
+      //   senderId: currentUserId || "current_user",
+      //   sender: {
+      //     id: currentUserId || "current_user",
+      //     fullName: "Bạn",
+      //     username: currentUserId || "current_user",
+      //     avatarUrl: null,
+      //     isOnline: true,
+      //     lastSeen: new Date().toISOString(),
+      //   },
+      //   content: (response.fileName as string) || "Tệp đính kèm",
+      //   type: type,
+      //   attachments: [
+      //     // Đảm bảo có mảng attachments
+      //     {
+      //       fileId: response.fileId,
+      //       fileName: response.fileName, // Sử dụng tên file thực tế
+      //       fileSize: response.fileSize,
+      //       mimeType: response.mimeType,
+      //       downloadUrl: response.downloadUrl,
+      //     },
+      //   ],
+      //   status: "sent",
+      //   createdAt: new Date().toISOString(),
+      //   updatedAt: new Date().toISOString(),
+      // };
 
       // Send via socket
       if (socketManager.isSocketConnected()) {
@@ -632,6 +614,7 @@ const MessageScreen = () => {
   useEffect(() => {
     socketManager.connect().then(() => {
       socketManager.joinConversation(conversationId);
+      socketManager.onMessage(handleNewMessage);
     });
 
     // Listen for new file shared events
@@ -639,6 +622,7 @@ const MessageScreen = () => {
       console.log("📎 File shared event received:", data);
       if (data.conversationId === conversationId) {
         // Convert to message format
+
         const fileMessage: Message = {
           id: data.fileId || data.messageId, // Sử dụng messageId nếu có
           conversationId: data.conversationId,
@@ -651,7 +635,7 @@ const MessageScreen = () => {
             isOnline: true,
             lastSeen: new Date().toISOString(),
           },
-          content: data.fileName || "Tệp đính kèm",
+          content: data.fileInfo.fileName || "xzy",
           type: data.type || "file", // Có thể lấy từ data nếu server gửi
           attachments: [
             {
@@ -659,8 +643,8 @@ const MessageScreen = () => {
               fileName: data.fileName,
               fileSize: data.fileSize || 0,
               mimeType: data.mimeType || "",
-              downloadUrl: data.downloadUrl || "",
-              thumbnailUrl: data.thumbnailUrl || undefined,
+              downloadUrl: data.fileInfo.downloadUrl || "",
+              thumbnailUrl: data.fileInfo.thumbnailUrl || undefined,
             },
           ],
           status: "sent",
@@ -674,6 +658,7 @@ const MessageScreen = () => {
             status: "sent",
           },
         }));
+        console.log("📎 Adding file shared message to chat:", fileMessage);
         handleNewMessage(fileMessage);
       }
     };
@@ -683,7 +668,9 @@ const MessageScreen = () => {
       console.log("📎 New file message received:", data);
       if (data.conversationId === conversationId) {
         // Check if this message already exists to prevent duplicates
-        const messageExists = messages.some(msg => msg.id === data.id);
+        const messageExists = messages.some(
+          (msg) => msg.localId === data.localId || msg.id === data.id
+        );
         if (messageExists) {
           console.log("📎 File message already exists, skipping:", data.id);
           return;
@@ -694,6 +681,7 @@ const MessageScreen = () => {
           id: data.id, // Use message ID from backend
           conversationId: data.conversationId,
           senderId: data.senderId,
+          localId: data.localId,
           sender: {
             id: data.senderId,
             fullName: data.senderName || "User",
@@ -702,18 +690,20 @@ const MessageScreen = () => {
             isOnline: true,
             lastSeen: new Date().toISOString(),
           },
-          content: data.content || "Tệp đính kèm",
+          content: data.content,
           type: data.messageType || "file",
-          attachments: data.fileInfo ? [
-            {
-              fileId: data.fileInfo.id,
-              fileName: data.fileInfo.fileName,
-              fileSize: data.fileInfo.fileSize,
-              mimeType: data.fileInfo.mimeType,
-              downloadUrl: data.fileInfo.downloadUrl,
-              thumbnailUrl: data.fileInfo.thumbnailUrl,
-            },
-          ] : [],
+          attachments: data.fileInfo
+            ? [
+                {
+                  fileId: data.fileInfo.id,
+                  fileName: data.fileInfo.fileName,
+                  fileSize: data.fileInfo.fileSize,
+                  mimeType: data.fileInfo.mimeType,
+                  downloadUrl: data.fileInfo.downloadUrl,
+                  thumbnailUrl: data.fileInfo.thumbnailUrl,
+                },
+              ]
+            : [],
           status: "sent",
           createdAt: new Date(data.timestamp).toISOString(),
           updatedAt: new Date(data.timestamp).toISOString(),
@@ -729,9 +719,12 @@ const MessageScreen = () => {
       console.log("📎 New batch files message received:", data);
       if (data.conversationId === conversationId) {
         // Check if this message already exists to prevent duplicates
-        const messageExists = messages.some(msg => msg.id === data.id);
+        const messageExists = messages.some((msg) => msg.id === data.id);
         if (messageExists) {
-          console.log("📎 Batch files message already exists, skipping:", data.id);
+          console.log(
+            "📎 Batch files message already exists, skipping:",
+            data.id
+          );
           return;
         }
 
@@ -750,14 +743,16 @@ const MessageScreen = () => {
           },
           content: data.content || "Nhiều tệp đính kèm",
           type: data.messageType || "file",
-          attachments: data.filesInfo ? data.filesInfo.map((fileInfo: any) => ({
-            fileId: fileInfo.id,
-            fileName: fileInfo.fileName,
-            fileSize: fileInfo.fileSize,
-            mimeType: fileInfo.mimeType,
-            downloadUrl: fileInfo.downloadUrl,
-            thumbnailUrl: fileInfo.thumbnailUrl,
-          })) : [],
+          attachments: data.filesInfo
+            ? data.filesInfo.map((fileInfo: any) => ({
+                fileId: fileInfo.id,
+                fileName: fileInfo.fileName,
+                fileSize: fileInfo.fileSize,
+                mimeType: fileInfo.mimeType,
+                downloadUrl: fileInfo.downloadUrl,
+                thumbnailUrl: fileInfo.thumbnailUrl,
+              }))
+            : [],
           status: "sent",
           createdAt: new Date(data.timestamp).toISOString(),
           updatedAt: new Date(data.timestamp).toISOString(),
@@ -852,23 +847,23 @@ const MessageScreen = () => {
           attachments:
             data.filesInfo || data.fileInfo
               ? [
-                {
-                  fileId:
-                    data.filesInfo?.[0]?.fileId || data.fileInfo?.fileId,
-                  fileName:
-                    data.filesInfo?.[0]?.fileName || data.fileInfo?.fileName,
-                  fileSize:
-                    data.filesInfo?.[0]?.fileSize || data.fileInfo?.fileSize,
-                  mimeType:
-                    data.filesInfo?.[0]?.mimeType || data.fileInfo?.mimeType,
-                  downloadUrl:
-                    data.filesInfo?.[0]?.downloadUrl ||
-                    data.fileInfo?.downloadUrl,
-                  thumbnailUrl:
-                    data.filesInfo?.[0]?.thumbnailUrl ||
-                    data.fileInfo?.thumbnailUrl,
-                },
-              ]
+                  {
+                    fileId:
+                      data.filesInfo?.[0]?.fileId || data.fileInfo?.fileId,
+                    fileName:
+                      data.filesInfo?.[0]?.fileName || data.fileInfo?.fileName,
+                    fileSize:
+                      data.filesInfo?.[0]?.fileSize || data.fileInfo?.fileSize,
+                    mimeType:
+                      data.filesInfo?.[0]?.mimeType || data.fileInfo?.mimeType,
+                    downloadUrl:
+                      data.filesInfo?.[0]?.downloadUrl ||
+                      data.fileInfo?.downloadUrl,
+                    thumbnailUrl:
+                      data.filesInfo?.[0]?.thumbnailUrl ||
+                      data.fileInfo?.thumbnailUrl,
+                  },
+                ]
               : undefined,
           status: "sent",
           createdAt: new Date(data.timestamp || Date.now()).toISOString(),
@@ -922,7 +917,9 @@ const MessageScreen = () => {
     socketManager.getSocket()?.on("quick_file_shared", handleFileShared);
     socketManager.getSocket()?.on("batch_files_shared", handleBatchFilesShared);
     socketManager.getSocket()?.on("new_file_message", handleNewFileMessage);
-    socketManager.getSocket()?.on("new_batch_files_message", handleNewBatchFilesMessage);
+    socketManager
+      .getSocket()
+      ?.on("new_batch_files_message", handleNewBatchFilesMessage);
     // Listen for new messages from socket
     socketManager.getSocket()?.on("new_message", handleSocketNewMessage);
 
@@ -965,7 +962,9 @@ const MessageScreen = () => {
         .getSocket()
         ?.off("batch_files_shared", handleBatchFilesShared);
       socketManager.getSocket()?.off("new_file_message", handleNewFileMessage);
-      socketManager.getSocket()?.off("new_batch_files_message", handleNewBatchFilesMessage);
+      socketManager
+        .getSocket()
+        ?.off("new_batch_files_message", handleNewBatchFilesMessage);
       socketManager.leaveConversation(conversationId);
       socketManager.offMessage(handleNewMessage);
       socketManager.offTyping(handleTyping);
@@ -1063,11 +1062,7 @@ const MessageScreen = () => {
   const renderMessage = ({ item, index }: { item: Message; index: number }) => {
     // Check if message has attachments
     const hasAttachments =
-      Array.isArray(item.attachments) && item.attachments.length > 0
-        ? true
-        : item.fileInfo && item.fileInfo.length > 0
-          ? true
-          : false;
+      Array.isArray(item.attachments) && item.attachments.length > 0;
     const attachment =
       (item.attachments && item.attachments[0]) ||
       (item.fileInfo && item.fileInfo[0]); // Lấy attachment đầu tiên nếu có
@@ -1109,7 +1104,6 @@ const MessageScreen = () => {
     };
     const renderMessageContent = () => {
       // Ưu tiên hiển thị file attachment nếu có
-      console.log("111", hasAttachments);
 
       if (item.type === "text" || item.messageType === "text") {
         // Chỉ hiển thị text thuần túy khi không có attachment
@@ -1120,16 +1114,17 @@ const MessageScreen = () => {
         );
       } else if (hasAttachments) {
         // Render file attachment
-        const isImage = attachment?.mimeType?.startsWith("image/");
-        const isAudio = attachment?.mimeType?.startsWith("audio/");
-        console.log("222", isImage);
-
+        const isImage = attachment?.mimeType?.startsWith("image");
+        const isVideo = attachment?.mimeType?.startsWith("video");
+        const isAudio = attachment?.mimeType?.startsWith("audio");
+        const type = isImage ? "image" : "video";
         return (
           <View className="flex space-y-2">
-            {isImage && attachment?.downloadUrl ? (
-              <AuthenticatedImage
-                imageUrl={attachment.downloadUrl}
+            {isImage || (isVideo && attachment?.downloadUrl) ? (
+              <AuthenticatedMediaViewer
+                mediaUrl={attachment && attachment.downloadUrl}
                 token={token}
+                mediaType={type}
               />
             ) : (
               <View className="flex flex-row items-center space-x-2 p-2 bg-white/20 rounded-lg">
@@ -1140,29 +1135,41 @@ const MessageScreen = () => {
                     <AntDesign name="file1" size={16} color="white" />
                   )}
                 </View>
-                <View className="">
+                <TouchableOpacity
+                  className=""
+                  onPress={() =>
+                    openOfficeFile(
+                      attachment?.downloadUrl,
+                      attachment?.fileName,
+                      token
+                    )
+                  }
+                >
                   <Text
-                    className={`font-medium text-sm p-2 ${isOwnMessage ? "text-white" : "text-gray-800"
-                      }`}
+                    className={`font-medium text-sm p-2 ${
+                      isOwnMessage ? "text-white" : "text-gray-800"
+                    }`}
                   >
                     {attachment?.fileName || "Tệp đính kèm"}
                   </Text>
                   <Text
-                    className={`text-xs opacity-70 ${isOwnMessage ? "text-white" : "text-gray-600"
-                      }`}
+                    className={`text-xs opacity-70 ${
+                      isOwnMessage ? "text-white" : "text-gray-600"
+                    }`}
                   >
                     {attachment?.fileSize
                       ? `${(attachment.fileSize / 1024 / 1024).toFixed(2)} MB`
                       : "File"}
                   </Text>
-                </View>
+                </TouchableOpacity>
               </View>
             )}
             {/* Hiển thị text kèm theo nếu có */}
-            {item.content && item.content !== attachment?.fileName && (
+            {item.content && (
               <Text
-                className={`font-nunito text-sm ${isOwnMessage ? "text-white" : ""
-                  }`}
+                className={`font-nunito text-sm ${
+                  isOwnMessage ? "text-white" : ""
+                }`}
               >
                 {item.content}
               </Text>
@@ -1183,14 +1190,15 @@ const MessageScreen = () => {
                 {item.content}
               </Text>
               <Text
-                className={`text-xs opacity-70 ${isOwnMessage ? "text-white" : ""
-                  }`}
+                className={`text-xs opacity-70 ${
+                  isOwnMessage ? "text-white" : ""
+                }`}
               >
                 {item.type === "image"
                   ? "Hình ảnh"
                   : item.type === "audio"
-                    ? "Tệp âm thanh"
-                    : "Tệp đính kèm"}
+                  ? "Tệp âm thanh"
+                  : "Tệp đính kèm"}
               </Text>
             </View>
           </View>
@@ -1228,50 +1236,50 @@ const MessageScreen = () => {
           )}
           {(!messages[index + 1] ||
             messages[index + 1].senderId !== item.senderId) && (
-              <View className="flex flex-row items-center mt-1 space-x-2">
-                <Text className="text-xs text-gray-500">
-                  {new Date(item.createdAt).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </Text>
-                {isOwnMessage && (
-                  <View className="flex flex-row items-center">
-                    {item.status === "sent" && (
-                      <Text className="text-xs text-gray-400">Đang gửi...</Text>
-                    )}
-                    {item.status === "sent" && (
+            <View className="flex flex-row items-center mt-1 space-x-2">
+              <Text className="text-xs text-gray-500">
+                {new Date(item.createdAt).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </Text>
+              {isOwnMessage && (
+                <View className="flex flex-row items-center">
+                  {item.status === "sent" && (
+                    <Text className="text-xs text-gray-400">Đang gửi...</Text>
+                  )}
+                  {item.status === "sent" && (
+                    <AntDesign name="check" size={12} color="#10b981" />
+                  )}
+                  {item.status === "delivered" && (
+                    <View className="flex flex-row">
                       <AntDesign name="check" size={12} color="#10b981" />
-                    )}
-                    {item.status === "delivered" && (
-                      <View className="flex flex-row">
-                        <AntDesign name="check" size={12} color="#10b981" />
-                        <AntDesign
-                          name="check"
-                          size={12}
-                          color="#10b981"
-                          style={{ marginLeft: -4 }}
-                        />
-                      </View>
-                    )}
-                    {item.status === "read" && (
-                      <View className="flex flex-row">
-                        <AntDesign name="check" size={12} color="#3b82f6" />
-                        <AntDesign
-                          name="check"
-                          size={12}
-                          color="#3b82f6"
-                          style={{ marginLeft: -4 }}
-                        />
-                      </View>
-                    )}
-                    {/* {item.status === "failed" && (
+                      <AntDesign
+                        name="check"
+                        size={12}
+                        color="#10b981"
+                        style={{ marginLeft: -4 }}
+                      />
+                    </View>
+                  )}
+                  {item.status === "read" && (
+                    <View className="flex flex-row">
+                      <AntDesign name="check" size={12} color="#3b82f6" />
+                      <AntDesign
+                        name="check"
+                        size={12}
+                        color="#3b82f6"
+                        style={{ marginLeft: -4 }}
+                      />
+                    </View>
+                  )}
+                  {/* {item.status === "failed" && (
               <AntDesign name="exclamationcircle" size={12} color="#ef4444" />
             )} */}
-                  </View>
-                )}
-              </View>
-            )}
+                </View>
+              )}
+            </View>
+          )}
         </View>
       </>
     );
@@ -1474,8 +1482,9 @@ const MessageScreen = () => {
                 <TouchableOpacity
                   onPress={handleSendMessage}
                   disabled={!message.trim() || sending}
-                  className={`ml-3 p-2 rounded-full ${message.trim() && !sending ? "bg-primary" : "bg-gray-300"
-                    }`}
+                  className={`ml-3 p-2 rounded-full ${
+                    message.trim() && !sending ? "bg-primary" : "bg-gray-300"
+                  }`}
                 >
                   <Feather
                     name="send"

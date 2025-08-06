@@ -3,7 +3,7 @@ import axios from "axios";
 //http://192.168.1.11:3000/api/v1
 //http://172.20.10.3:3000/api/v1
 const axiosInstance = axios.create({
-  baseURL: "http://192.168.1.11:3000/api/v1", // Thay đổi URL này cho phù hợp
+  baseURL: "http://192.168.0.102:3000/api/v1", // Thay đổi URL này cho phù hợp
   timeout: 10000, // 10 giây
   headers: {
     "Content-Type": "application/json",
@@ -18,8 +18,9 @@ axiosInstance.interceptors.request.use(
     if (account) {
       try {
         if ((account as any).accessToken) {
-          config.headers["Authorization"] = `Bearer ${(account as any).accessToken
-            }`;
+          config.headers["Authorization"] = `Bearer ${
+            (account as any).accessToken
+          }`;
         }
       } catch (error) {
         console.error("Lỗi khi parse account data:", error);

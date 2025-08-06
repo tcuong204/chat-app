@@ -183,7 +183,7 @@ class SocketManager {
             }
 
             // Create socket connection
-            this.socket = io("http://192.168.1.11:3000/chat", {
+            this.socket = io("http://192.168.0.102:3000/chat", {
               //http://192.168.1.11:3000
               auth: {
                 token: accessToken,
@@ -608,7 +608,10 @@ class SocketManager {
 
     // Add debug listener to confirm server response
     this.socket.once("conversations_last_messages_response", (response) => {
-      console.log("📨 [DEBUG] Received conversations_last_messages_response:", response);
+      console.log(
+        "📨 [DEBUG] Received conversations_last_messages_response:",
+        response
+      );
     });
   }
 

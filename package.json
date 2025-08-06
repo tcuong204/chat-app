@@ -57,7 +57,10 @@
     "socket.io-client": "^4.8.1",
     "tailwindcss": "^3.4.17",
     "yup": "^1.6.1",
-    "expo-audio": "~0.4.8"
+    "expo-audio": "~0.4.8",
+    "expo-video": "~2.2.2",
+    "expo-file-system": "~18.1.11",
+    "expo-sharing": "~13.1.5"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

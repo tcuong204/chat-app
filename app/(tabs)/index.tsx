@@ -495,22 +495,27 @@ export default function Index() {
       apiLastMessage: item.lastMessage,
       apiTime: item.time,
     });
-
-    const lastMessageContent = socketLastMessage
-      ? `${socketLastMessage.senderName}: ${socketLastMessage.content}`
-      : item.lastMessage || "";
+    const lastMessageContent =
+      socketLastMessage?.messageType === "text"
+        ? `${socketLastMessage?.senderName || "Unknown"}: ${
+            socketLastMessage?.content || ""
+          }`
+        : socketLastMessage?.messageType === "file"
+        ? `${socketLastMessage?.senderName || "Unknown"} đã gửi 1 file`
+        : "Chưa có tin nhắn";
 
     const lastMessageTime = socketLastMessage
       ? new Date(socketLastMessage.timestamp).toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
+          hour: "2-digit",
+          minute: "2-digit",
+        })
       : item.time || "";
 
     return (
       <MessageCard
         chat={{
           id: item.id,
+          isReaded: socketLastMessage?.isReaded || false,
           name: item.name || item.fullName,
           lastMessage: lastMessageContent,
           time: lastMessageTime,

@@ -10,6 +10,18 @@ import {
   WebSocketServer,
 } from "@nestjs/websockets";
 import { Server, Socket } from "socket.io";
+import {
+  CallAcceptDto,
+  CallDeclineDto,
+  CallHangupDto,
+  CallIceCandidateDto,
+  CallInitiateDto,
+  CallMediaStateDto,
+  CallRenegotiateDto,
+} from "../../modules/calls/dto/webrtc-signaling.dto";
+import { CallStatus } from "../../modules/calls/schemas/call.schema";
+import { CallStateService } from "../../modules/calls/services/call-state.service";
+import { WebRTCSignalingService } from "../../modules/calls/services/webrtc-signaling.service";
 import { ConversationsService } from "../../modules/conversations/services/conversations.service";
 import { FilesService } from "../../modules/files/services/files.service";
 import { CreateMessageDto } from "../../modules/messages/dto";
@@ -36,7 +48,12 @@ import { SocketAuthService } from "../services/socket-auth.service";
 // Constants for configuration
 const DEFAULT_MESSAGE_TIMEOUT = 30000; // 30 seconds
 const MAX_RETRY_ATTEMPTS = 3;
+const CALL_TIMEOUT = 30000; // 30 seconds for incoming call timeout
 const DELIVERY_BATCH_SIZE = 50;
+
+// Typing indicator constants
+const TYPING_TIMEOUT = 3000; // 3 seconds - auto clear typing if no activity
+const TYPING_DEBOUNCE = 1000; // 1 second - debounce typing events
 
 // Error constants
 const ERROR_MESSAGES = {
@@ -92,6 +109,7 @@ interface BatchShareFilesDto {
   filesMetadata?: Array<{
     fileId: string;
     fileName: string;
+    originalName?: string;
     fileSize: number;
     mimeType: string;
     downloadUrl: string;
@@ -107,6 +125,7 @@ interface QuickShareFileDto {
   message?: string;
   fileMetadata: {
     fileName: string;
+    originalName?: string; // Thêm originalName
     fileSize: number;
     mimeType: string;
     downloadUrl: string;
@@ -147,6 +166,25 @@ interface AuthDto {
   platform: "ios" | "android" | "web" | "windows" | "mac";
 }
 
+// Typing indicator DTOs
+interface TypingStartDto {
+  conversationId: string;
+  timestamp: number;
+}
+
+interface TypingStopDto {
+  conversationId: string;
+  timestamp: number;
+}
+
+interface TypingStatusDto {
+  conversationId: string;
+  userId: string;
+  userName: string;
+  isTyping: boolean;
+  timestamp: number;
+}
+
 /**
  * Chat Gateway - Real-time messaging with Socket.IO
  *
@@ -184,6 +222,24 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly socketToUser = new Map<string, string>(); // socketId -> userId
   private readonly socketToDevice = new Map<string, any>(); // socketId -> deviceInfo
 
+  // Typing indicator tracking
+  private readonly typingUsers = new Map<
+    string,
+    Map<
+      string,
+      {
+        userId: string;
+        userName: string;
+        timestamp: number;
+        timeoutId: NodeJS.Timeout;
+      }
+    >
+  >(); // conversationId -> Map<userId, typingInfo>
+  private readonly userTypingTimeouts = new Map<string, NodeJS.Timeout>(); // userId -> timeoutId
+
+  // Call timeout tracking
+  private readonly callTimeouts = new Map<string, NodeJS.Timeout>(); // callId -> timeoutId
+
   constructor(
     private readonly socketAuthService: SocketAuthService,
     private readonly messageQueueService: MessageQueueService,
@@ -195,6 +251,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly usersService: UsersService,
     private readonly presenceService: PresenceService,
     private readonly lastMessageService: LastMessageService,
+    private readonly callStateService: CallStateService,
+    private readonly webRTCSignalingService: WebRTCSignalingService,
     private readonly eventEmitter: EventEmitter2
   ) {}
 
@@ -256,6 +314,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       // Join user to personal room
       await client.join(`user:${user.userId}`);
+      this.logger.log(
+        `✅ User ${user.userId} joined personal room: user:${user.userId}`
+      );
 
       // Join user's conversations
       const conversations = await this.getUserConversations(user.userId);
@@ -343,6 +404,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         // Notify contacts about potential offline status
         await this.notifyContactsAboutPresenceChange(userId, "offline");
       }
+
+      // Clear typing indicators for this user
+      this.clearAllUserTyping(userId);
+
+      // Cleanup call state when user disconnects
+      await this.cleanupUserCallState(userId);
     }
 
     // Cleanup
@@ -421,12 +488,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
             downloadUrl: await this.filesService.generateDownloadUrl(
               data.fileId,
               userId,
-              { expiresIn: 24 * 60 * 60 }
+              { expiresIn: 24 * 60 * 60 * 30 }
             ),
             thumbnailUrl: fileDetails.thumbnailPath
               ? await this.filesService
                   .generateDownloadUrl(data.fileId, userId, {
-                    expiresIn: 24 * 60 * 60,
+                    expiresIn: 24 * 60 * 60 * 30,
                   })
                   .then((url) => `${url}&thumbnail=true`)
               : undefined,
@@ -461,12 +528,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
               downloadUrl: await this.filesService.generateDownloadUrl(
                 fileId,
                 userId,
-                { expiresIn: 24 * 60 * 60 }
+                { expiresIn: 24 * 60 * 60 * 30 }
               ),
               thumbnailUrl: fileDetails.thumbnailPath
                 ? await this.filesService
                     .generateDownloadUrl(fileId, userId, {
-                      expiresIn: 24 * 60 * 60,
+                      expiresIn: 24 * 60 * 60 * 30,
                     })
                     .then((url) => `${url}&thumbnail=true`)
                 : undefined,
@@ -545,6 +612,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       );
 
       this.logger.log(`Message created successfully`, message);
+
+      // Clear typing indicator for sender (message was sent)
+      this.clearUserTyping(data.conversationId, userId);
 
       // Update acknowledgment with real server ID and processed status
       client.emit("message_received", {
@@ -841,6 +911,128 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
+  // ================= TYPING INDICATOR METHODS =================
+
+  /**
+   * Handle typing start event
+   * Client indicates user started typing in a conversation
+   */
+  @SubscribeMessage("typing_start")
+  async handleTypingStart(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: TypingStartDto
+  ) {
+    try {
+      const userId = this.socketToUser.get(client.id);
+      if (!userId) {
+        this.logger.warn("Typing start: User not authenticated");
+        return;
+      }
+
+      // Get user display name
+      const userName = await this.getUserDisplayName(userId);
+
+      // Update typing status
+      await this.setUserTyping(data.conversationId, userId, userName, true);
+
+      // Broadcast typing indicator to other participants (exclude sender)
+      const typingStatus: TypingStatusDto = {
+        conversationId: data.conversationId,
+        userId: userId,
+        userName: userName,
+        isTyping: true,
+        timestamp: Date.now(),
+      };
+
+      client
+        .to(`conversation:${data.conversationId}`)
+        .emit("user_typing", typingStatus);
+
+      this.logger.debug(
+        `User ${userId} started typing in conversation ${data.conversationId}`
+      );
+    } catch (error) {
+      this.logger.error(`Typing start error for socket ${client.id}:`, error);
+    }
+  }
+
+  /**
+   * Handle typing stop event
+   * Client indicates user stopped typing in a conversation
+   */
+  @SubscribeMessage("typing_stop")
+  async handleTypingStop(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: TypingStopDto
+  ) {
+    try {
+      const userId = this.socketToUser.get(client.id);
+      if (!userId) {
+        this.logger.warn("Typing stop: User not authenticated");
+        return;
+      }
+
+      // Get user display name
+      const userName = await this.getUserDisplayName(userId);
+
+      // Update typing status
+      await this.setUserTyping(data.conversationId, userId, userName, false);
+
+      // Broadcast typing stop to other participants (exclude sender)
+      const typingStatus: TypingStatusDto = {
+        conversationId: data.conversationId,
+        userId: userId,
+        userName: userName,
+        isTyping: false,
+        timestamp: Date.now(),
+      };
+
+      client
+        .to(`conversation:${data.conversationId}`)
+        .emit("user_typing", typingStatus);
+
+      this.logger.debug(
+        `User ${userId} stopped typing in conversation ${data.conversationId}`
+      );
+    } catch (error) {
+      this.logger.error(`Typing stop error for socket ${client.id}:`, error);
+    }
+  }
+
+  /**
+   * Get current typing users in a conversation
+   * Client can request who is currently typing
+   */
+  @SubscribeMessage("get_typing_users")
+  async handleGetTypingUsers(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { conversationId: string }
+  ) {
+    try {
+      const userId = this.socketToUser.get(client.id);
+      if (!userId) {
+        this.logger.warn("Get typing users: User not authenticated");
+        return;
+      }
+
+      const typingUsers = this.getTypingUsersInConversation(
+        data.conversationId,
+        userId
+      );
+
+      client.emit("typing_users_response", {
+        conversationId: data.conversationId,
+        typingUsers: typingUsers,
+        timestamp: Date.now(),
+      });
+    } catch (error) {
+      this.logger.error(
+        `Get typing users error for socket ${client.id}:`,
+        error
+      );
+    }
+  }
+
   @SubscribeMessage("share_file")
   async handleShareFile(
     @ConnectedSocket() client: Socket,
@@ -866,7 +1058,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const downloadUrl = await this.filesService.generateDownloadUrl(
         data.fileId,
         userId,
-        { expiresIn: 24 * 60 * 60 } // 24 hours
+        { expiresIn: 24 * 60 * 60 * 30 } // 24 hours
       );
 
       // Create user context for service
@@ -906,6 +1098,24 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         userContext
       );
 
+      // Clear typing indicator for sender (file message was sent)
+      this.clearUserTyping(data.conversationId, userId);
+
+      // Link file to message in database for attachment history
+      try {
+        await this.filesService.linkFileToMessage(
+          data.fileId,
+          message.id,
+          userId,
+          data.message // Use message as caption if provided
+        );
+        this.logger.log(`File ${data.fileId} linked to message ${message.id}`);
+      } catch (linkError) {
+        this.logger.warn(
+          `Failed to link file to message: ${linkError.message}`
+        );
+      }
+
       // Broadcast file message to conversation
       const senderName = await this.getUserDisplayName(userId);
       const messageData = {
@@ -928,7 +1138,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
                 .generateDownloadUrl(
                   data.fileId, // Use same fileId for thumbnail access
                   userId,
-                  { expiresIn: 24 * 60 * 60 }
+                  { expiresIn: 24 * 60 * 60 * 30 }
                 )
                 .then((url) => `${url}&thumbnail=true`)
             : undefined,
@@ -950,6 +1160,34 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.logger.log(
         `File shared: ${data.fileId} by ${userId} to conversation ${data.conversationId}`
       );
+
+      // Auto-mark as delivered for online participants (excluding sender)
+      try {
+        const participants = (
+          await this.getConversationParticipants(data.conversationId, userId)
+        ).filter((i) => i !== userId);
+        this.logger.debug(`Participants for delivery update:`, participants);
+        await this.updateDeliveryStatusForOnlineUsers(message.id, participants);
+
+        // Queue message for offline participants
+        await this.queueMessageForOfflineParticipants(
+          message,
+          participants,
+          userId
+        );
+
+        // Update lastMessage for conversation list real-time updates
+        await this.updateAndBroadcastLastMessage(
+          message,
+          data.conversationId,
+          userId
+        );
+      } catch (deliveryError) {
+        this.logger.warn(
+          `Failed to update delivery status for message ${message.id}:`,
+          deliveryError
+        );
+      }
     } catch (error) {
       this.logger.error(`Share file error for socket ${client.id}:`, error);
 
@@ -1033,6 +1271,24 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         userContext
       );
 
+      // Clear typing indicator for sender (quick file message was sent)
+      this.clearUserTyping(data.conversationId, userId);
+
+      // Link file to message in database for attachment history
+      try {
+        await this.filesService.linkFileToMessage(
+          data.fileId,
+          message.id,
+          userId,
+          data.message // Use message as caption if provided
+        );
+        this.logger.log(`File ${data.fileId} linked to message ${message.id}`);
+      } catch (linkError) {
+        this.logger.warn(
+          `Failed to link file to message: ${linkError.message}`
+        );
+      }
+
       // Broadcast file message to conversation (using provided metadata)
       const senderName = await this.getUserDisplayName(userId);
       const messageData = {
@@ -1046,6 +1302,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         fileInfo: {
           id: data.fileId,
           fileName: data.fileMetadata.fileName,
+          originalName: data.fileMetadata.originalName, // Thêm originalName
           fileSize: data.fileMetadata.fileSize,
           mimeType: data.fileMetadata.mimeType,
           downloadUrl: data.fileMetadata.downloadUrl,
@@ -1070,6 +1327,34 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.logger.log(
         `Quick file shared: ${data.fileId} by ${userId} to conversation ${data.conversationId}`
       );
+
+      // Auto-mark as delivered for online participants (excluding sender)
+      try {
+        const participants = (
+          await this.getConversationParticipants(data.conversationId, userId)
+        ).filter((i) => i !== userId);
+        this.logger.debug(`Participants for delivery update:`, participants);
+        await this.updateDeliveryStatusForOnlineUsers(message.id, participants);
+
+        // Queue message for offline participants
+        await this.queueMessageForOfflineParticipants(
+          message,
+          participants,
+          userId
+        );
+
+        // Update lastMessage for conversation list real-time updates
+        await this.updateAndBroadcastLastMessage(
+          message,
+          data.conversationId,
+          userId
+        );
+      } catch (deliveryError) {
+        this.logger.warn(
+          `Failed to update delivery status for message ${message.id}:`,
+          deliveryError
+        );
+      }
     } catch (error) {
       this.logger.error(
         `Quick share file error for socket ${client.id}:`,
@@ -1183,19 +1468,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           const downloadUrl = await this.filesService.generateDownloadUrl(
             fileId,
             userId,
-            { expiresIn: 24 * 60 * 60 }
+            { expiresIn: 24 * 60 * 60 * 30 }
           );
 
           const fileMetadata = {
             fileId: fileId,
             fileName: fileDetails.fileName,
+            originalName: fileDetails.originalFilename, // Add originalName if available
             fileSize: fileDetails.fileSize,
             mimeType: fileDetails.mimeType,
             downloadUrl: downloadUrl,
             thumbnailUrl: fileDetails.thumbnailPath
               ? await this.filesService
                   .generateDownloadUrl(fileId, userId, {
-                    expiresIn: 24 * 60 * 60,
+                    expiresIn: 24 * 60 * 60 * 30,
                   })
                   .then((url) => `${url}&thumbnail=true`)
               : undefined,
@@ -1232,6 +1518,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         attachments: filesMetadata.map((fileMetadata) => ({
           fileId: fileMetadata.fileId,
           fileName: fileMetadata.fileName,
+          originalName: fileMetadata.originalName,
           fileSize: fileMetadata.fileSize,
           mimeType: fileMetadata.mimeType,
         })),
@@ -1243,6 +1530,28 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         createMessageDto,
         userContext
       );
+
+      // Clear typing indicator for sender (batch files message was sent)
+      this.clearUserTyping(data.conversationId, userId);
+
+      // Link each file to message in database for attachment history
+      try {
+        for (const fileId of data.fileIds) {
+          await this.filesService.linkFileToMessage(
+            fileId,
+            message.id,
+            userId,
+            data.message // Use message as caption if provided
+          );
+        }
+        this.logger.log(
+          `${data.fileIds.length} files linked to message ${message.id}`
+        );
+      } catch (linkError) {
+        this.logger.warn(
+          `Failed to link files to message: ${linkError.message}`
+        );
+      }
 
       // Broadcast batch file message to conversation
       const senderName = await this.getUserDisplayName(userId);
@@ -1257,6 +1566,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         filesInfo: filesMetadata.map((fileMetadata) => ({
           id: fileMetadata.fileId,
           fileName: fileMetadata.fileName,
+          originalName: fileMetadata.originalName, // Add originalName if available
           fileSize: fileMetadata.fileSize,
           mimeType: fileMetadata.mimeType,
           downloadUrl: fileMetadata.downloadUrl,
@@ -1291,6 +1601,34 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.logger.log(
         `Batch files shared: ${data.fileIds.length} files by ${userId} to conversation ${data.conversationId}`
       );
+
+      // Auto-mark as delivered for online participants (excluding sender)
+      try {
+        const participants = (
+          await this.getConversationParticipants(data.conversationId, userId)
+        ).filter((i) => i !== userId);
+        this.logger.debug(`Participants for delivery update:`, participants);
+        await this.updateDeliveryStatusForOnlineUsers(message.id, participants);
+
+        // Queue message for offline participants
+        await this.queueMessageForOfflineParticipants(
+          message,
+          participants,
+          userId
+        );
+
+        // Update lastMessage for conversation list real-time updates
+        await this.updateAndBroadcastLastMessage(
+          message,
+          data.conversationId,
+          userId
+        );
+      } catch (deliveryError) {
+        this.logger.warn(
+          `Failed to update delivery status for message ${message.id}:`,
+          deliveryError
+        );
+      }
     } catch (error) {
       this.logger.error(
         `Batch share files error for socket ${client.id}:`,
@@ -1770,6 +2108,172 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   // ================= HELPER METHODS SECTION =================
+
+  // ================= TYPING INDICATOR HELPER METHODS =================
+
+  /**
+   * Set user typing status in a conversation
+   * @param conversationId - The conversation identifier
+   * @param userId - The user identifier
+   * @param userName - The user display name
+   * @param isTyping - Whether user is typing or not
+   */
+  private async setUserTyping(
+    conversationId: string,
+    userId: string,
+    userName: string,
+    isTyping: boolean
+  ): Promise<void> {
+    try {
+      if (!this.typingUsers.has(conversationId)) {
+        this.typingUsers.set(conversationId, new Map());
+      }
+
+      const conversationTyping = this.typingUsers.get(conversationId)!;
+
+      if (isTyping) {
+        // Clear existing timeout for this user
+        const existingTimeout = this.userTypingTimeouts.get(userId);
+        if (existingTimeout) {
+          clearTimeout(existingTimeout);
+        }
+
+        // Set new typing status
+        const timeoutId = setTimeout(() => {
+          this.clearUserTyping(conversationId, userId);
+        }, TYPING_TIMEOUT);
+
+        conversationTyping.set(userId, {
+          userId,
+          userName,
+          timestamp: Date.now(),
+          timeoutId,
+        });
+
+        this.userTypingTimeouts.set(userId, timeoutId);
+      } else {
+        // Remove typing status
+        this.clearUserTyping(conversationId, userId);
+      }
+    } catch (error) {
+      this.logger.error(`Failed to set user typing status:`, error);
+    }
+  }
+
+  /**
+   * Clear user typing status
+   * @param conversationId - The conversation identifier
+   * @param userId - The user identifier
+   */
+  private clearUserTyping(conversationId: string, userId: string): void {
+    try {
+      const conversationTyping = this.typingUsers.get(conversationId);
+      if (conversationTyping) {
+        const typingInfo = conversationTyping.get(userId);
+        if (typingInfo) {
+          clearTimeout(typingInfo.timeoutId);
+          conversationTyping.delete(userId);
+
+          // Cleanup empty conversation
+          if (conversationTyping.size === 0) {
+            this.typingUsers.delete(conversationId);
+          }
+
+          // Broadcast typing stop to conversation
+          const typingStatus: TypingStatusDto = {
+            conversationId,
+            userId,
+            userName: typingInfo.userName,
+            isTyping: false,
+            timestamp: Date.now(),
+          };
+
+          this.server
+            .to(`conversation:${conversationId}`)
+            .emit("user_typing", typingStatus);
+          this.logger.debug(
+            `Auto-cleared typing status for user ${userId} in conversation ${conversationId}`
+          );
+        }
+      }
+
+      // Clear user timeout tracking
+      const timeoutId = this.userTypingTimeouts.get(userId);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        this.userTypingTimeouts.delete(userId);
+      }
+    } catch (error) {
+      this.logger.error(`Failed to clear user typing status:`, error);
+    }
+  }
+
+  /**
+   * Get typing users in a conversation (excluding specified user)
+   * @param conversationId - The conversation identifier
+   * @param excludeUserId - User ID to exclude from results
+   * @returns Array of typing users
+   */
+  private getTypingUsersInConversation(
+    conversationId: string,
+    excludeUserId?: string
+  ): Array<{
+    userId: string;
+    userName: string;
+    timestamp: number;
+  }> {
+    try {
+      const conversationTyping = this.typingUsers.get(conversationId);
+      if (!conversationTyping || conversationTyping.size === 0) {
+        return [];
+      }
+
+      const typingUsers: Array<{
+        userId: string;
+        userName: string;
+        timestamp: number;
+      }> = [];
+
+      conversationTyping.forEach((typingInfo, userId) => {
+        if (!excludeUserId || userId !== excludeUserId) {
+          typingUsers.push({
+            userId: typingInfo.userId,
+            userName: typingInfo.userName,
+            timestamp: typingInfo.timestamp,
+          });
+        }
+      });
+
+      return typingUsers;
+    } catch (error) {
+      this.logger.error(`Failed to get typing users in conversation:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Clear all typing status for a user (called on disconnect)
+   * @param userId - The user identifier
+   */
+  private clearAllUserTyping(userId: string): void {
+    try {
+      // Clear from all conversations
+      this.typingUsers.forEach((conversationTyping, conversationId) => {
+        if (conversationTyping.has(userId)) {
+          this.clearUserTyping(conversationId, userId);
+        }
+      });
+
+      // Clear user timeout tracking
+      const timeoutId = this.userTypingTimeouts.get(userId);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        this.userTypingTimeouts.delete(userId);
+      }
+    } catch (error) {
+      this.logger.error(`Failed to clear all user typing status:`, error);
+    }
+  }
 
   async handleLeaveConversations(
     @ConnectedSocket() client: Socket,
@@ -2303,16 +2807,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
    * Generate appropriate content message based on file type
    */
   private generateFileContentMessage(type: string, fileName: string): string {
-    const fileEmojis = {
-      image: "🖼️",
-      audio: "🎵",
-      video: "🎥",
-      document: "📄",
-      file: "📎",
-    };
-
-    const emoji = fileEmojis[type] || fileEmojis["file"];
-    return `${emoji} ${fileName}`;
+    return "";
   }
 
   /**
@@ -2322,52 +2817,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     filesCount: number,
     fileNames: string[]
   ): string {
-    if (filesCount === 1) {
-      return `📎 ${fileNames[0]}`;
-    }
-
-    const fileTypes = this.categorizeFiles(fileNames);
-    const typeDescriptions: string[] = [];
-
-    if (fileTypes.images > 0) {
-      typeDescriptions.push(
-        `${fileTypes.images} ${
-          fileTypes.images === 1 ? "hình ảnh" : "hình ảnh"
-        }`
-      );
-    }
-    if (fileTypes.videos > 0) {
-      typeDescriptions.push(
-        `${fileTypes.videos} ${fileTypes.videos === 1 ? "video" : "video"}`
-      );
-    }
-    if (fileTypes.audios > 0) {
-      typeDescriptions.push(
-        `${fileTypes.audios} ${
-          fileTypes.audios === 1 ? "âm thanh" : "âm thanh"
-        }`
-      );
-    }
-    if (fileTypes.documents > 0) {
-      typeDescriptions.push(
-        `${fileTypes.documents} ${
-          fileTypes.documents === 1 ? "tài liệu" : "tài liệu"
-        }`
-      );
-    }
-    if (fileTypes.others > 0) {
-      typeDescriptions.push(
-        `${fileTypes.others} ${
-          fileTypes.others === 1 ? "tệp khác" : "tệp khác"
-        }`
-      );
-    }
-
-    if (typeDescriptions.length === 0) {
-      return `📎 ${filesCount} tệp`;
-    }
-
-    return `📎 ${typeDescriptions.join(", ")}`;
+    return "";
   }
 
   /**
@@ -2462,13 +2912,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private validateFileMetadata(fileMetadata: any): boolean {
     if (!fileMetadata) return false;
 
-    const requiredFields = [
-      "fileId",
-      "fileName",
-      "fileSize",
-      "mimeType",
-      "downloadUrl",
-    ];
+    const requiredFields = ["fileName", "fileSize", "mimeType", "downloadUrl"];
     return requiredFields.every((field) => fileMetadata[field] !== undefined);
   }
 
@@ -2649,6 +3093,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // Get user's contacts (friends who should see presence updates)
       const contacts = await this.presenceService.getUserContacts(userId);
 
+      this.logger.debug(
+        `Notifying contacts about ${userId}'s presence change to ${status}`,
+        contacts
+      );
+
       if (contacts.length === 0) {
         return;
       }
@@ -2656,6 +3105,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // Get full presence info
       const presence = await this.presenceService.getUserPresence(userId);
 
+      this.logger.debug(`Presence for user ${userId}:`, presence);
       if (!presence) {
         return;
       }
@@ -2668,6 +3118,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         statusMessage: presence.statusMessage,
         timestamp: Date.now(),
       };
+
+      this.logger.debug(`contact_presence_update`, presenceNotification);
 
       // Broadcast to each contact's presence room
       for (const contactId of contacts) {
@@ -2749,11 +3201,27 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: GetConversationsLastMessagesDto
   ) {
     try {
+      this.logger.debug(
+        `Get lastMessages request from client ${client.id}:`,
+        data
+      );
+
       const userId = this.socketToUser.get(client.id);
       if (!userId) {
-        this.logger.warn("Get lastMessages: User not authenticated");
+        this.logger.warn(
+          `Get lastMessages: User not authenticated for client ${client.id}`
+        );
+        this.logger.debug(
+          `Current socketToUser map:`,
+          Object.fromEntries(this.socketToUser)
+        );
         return;
       }
+
+      this.logger.debug(
+        `Get lastMessages for user ${userId}, conversations:`,
+        data.conversationIds
+      );
 
       // Get lastMessages from service
       const lastMessages =
@@ -2761,6 +3229,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
           data.conversationIds,
           userId
         );
+
+      this.logger.debug(
+        `Retrieved lastMessages for user ${userId}:`,
+        lastMessages
+      );
 
       // Convert to response format
       const updates: ConversationLastMessageUpdate[] = [];
@@ -2959,5 +3432,616 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.logger.debug(
       `LastMessage read status updated for conversation ${event.conversationId}`
     );
+  }
+
+  // =============================================
+  // VOICE/VIDEO CALL SIGNALING EVENTS
+  // =============================================
+
+  /**
+   * WebRTC Call Initiation Handler
+   *
+   * Handles SDP offer from client và initiates WebRTC call session.
+   * Uses WebRTCSignalingService for business logic và state management.
+   *
+   * @param client - Socket client instance
+   * @param data - Call initiation data including SDP offer
+   */
+  @SubscribeMessage("call:initiate")
+  async handleCallInitiate(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: CallInitiateDto
+  ): Promise<void> {
+    try {
+      this.logger.log(`WebRTC call initiate from client ${client.id}`);
+
+      // Get authenticated user ID from socket
+      const userId = this.socketToUser.get(client.id);
+      if (!userId) {
+        client.emit("call:error", {
+          message: "Authentication required",
+          code: "AUTH_REQUIRED",
+        });
+        return;
+      }
+
+      // Get user details
+      const user = await this.usersService.findById(userId);
+      if (!user) {
+        client.emit("call:error", {
+          message: "User not found",
+          code: "USER_NOT_FOUND",
+        });
+        return;
+      }
+
+      // Use WebRTCSignalingService for business logic
+      const { callId, callRecord, signalingData } =
+        await this.webRTCSignalingService.initiateCall(userId, data);
+
+      // Join call room for real-time signaling
+      await client.join(`call:${callId}`);
+
+      this.logger.log(
+        `📞 Emitting call:incoming to user:${data.targetUserId} room`
+      );
+
+      // Notify target user about incoming call via user room
+      this.server.to(`user:${data.targetUserId}`).emit("call:incoming", {
+        callId,
+        callerId: userId,
+        callerName: user.fullName || user.username,
+        callerAvatar: user.avatarUrl,
+        callType: data.callType,
+        sdpOffer: data.sdpOffer,
+        conversationId: data.conversationId,
+      });
+
+      this.logger.log(
+        `✅ call:incoming event emitted to user:${data.targetUserId}`
+      );
+
+      // Confirm to initiator
+      client.emit("call:initiated", {
+        callId,
+        status: "ringing",
+        targetUserId: data.targetUserId,
+        callType: data.callType,
+      });
+
+      // Set call timeout to auto-cancel if not answered
+      const timeoutId = setTimeout(async () => {
+        try {
+          this.logger.log(`Call timeout for ${callId} - auto cancelling`);
+
+          // Check if call is still in ringing state
+          const currentCall = await this.callStateService.getActiveCall(callId);
+          if (currentCall && currentCall.status === CallStatus.INITIATING) {
+            // End the call due to timeout
+            await this.webRTCSignalingService.hangupCall(userId, {
+              callId,
+              reason: "timeout",
+            });
+
+            // Notify both users about timeout
+            this.server.to(`call:${callId}`).emit("call:timeout", {
+              callId,
+              reason: "No answer",
+            });
+
+            // Clean up call room
+            this.server.in(`call:${callId}`).socketsLeave(`call:${callId}`);
+          }
+        } catch (error) {
+          this.logger.error(
+            `Failed to handle call timeout for ${callId}: ${error.message}`
+          );
+        } finally {
+          // Remove timeout reference
+          this.callTimeouts.delete(callId);
+        }
+      }, CALL_TIMEOUT);
+
+      // Store timeout reference for cleanup
+      this.callTimeouts.set(callId, timeoutId);
+
+      this.logger.log(`WebRTC call initiated successfully: ${callId}`);
+    } catch (error) {
+      this.logger.error(
+        `Failed to initiate WebRTC call: ${error.message}`,
+        error.stack
+      );
+      client.emit("call:error", {
+        message: error.message || "Failed to initiate call",
+        code: "INITIATE_FAILED",
+      });
+    }
+  }
+
+  /**
+   * WebRTC Call Accept Handler
+   *
+   * Handles SDP answer from client để accept incoming call.
+   * Uses WebRTCSignalingService for business logic và state management.
+   *
+   * @param client - Socket client instance
+   * @param data - Call accept data including SDP answer
+   */
+  @SubscribeMessage("call:accept")
+  async handleCallAccept(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: CallAcceptDto
+  ): Promise<void> {
+    try {
+      this.logger.log(
+        `WebRTC call accept from client ${client.id} for call ${data.callId}`
+      );
+
+      // Get authenticated user ID from socket
+      const userId = this.socketToUser.get(client.id);
+      if (!userId) {
+        client.emit("call:error", {
+          message: "Authentication required",
+          code: "AUTH_REQUIRED",
+        });
+        return;
+      }
+
+      // Use WebRTCSignalingService for business logic
+      const { callRecord, signalingData } =
+        await this.webRTCSignalingService.acceptCall(userId, data);
+
+      // Clear call timeout since call was answered
+      const timeoutId = this.callTimeouts.get(data.callId);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        this.callTimeouts.delete(data.callId);
+        this.logger.debug(
+          `Cleared call timeout for accepted call: ${data.callId}`
+        );
+      }
+
+      // Join call room for real-time signaling
+      await client.join(`call:${data.callId}`);
+
+      // Notify call initiator về SDP answer
+      this.server.to(`call:${data.callId}`).emit("call:accepted", {
+        callId: data.callId,
+        accepterId: userId,
+        sdpAnswer: data.sdpAnswer,
+        status: "connected",
+      });
+
+      // Confirm to accepter
+      client.emit("call:accept_confirmed", {
+        callId: data.callId,
+        status: "connected",
+        participants: callRecord.participants,
+      });
+
+      this.logger.log(`WebRTC call accepted successfully: ${data.callId}`);
+    } catch (error) {
+      this.logger.error(
+        `Failed to accept WebRTC call: ${error.message}`,
+        error.stack
+      );
+      client.emit("call:error", {
+        message: error.message || "Failed to accept call",
+        code: "ACCEPT_FAILED",
+      });
+    }
+  }
+
+  /**
+   * WebRTC Call Decline Handler
+   *
+   * Handles call decline và cleans up resources.
+   * Uses WebRTCSignalingService for business logic và state management.
+   *
+   * @param client - Socket client instance
+   * @param data - Call decline data with reason
+   */
+  @SubscribeMessage("call:decline")
+  async handleCallDecline(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: CallDeclineDto
+  ): Promise<void> {
+    try {
+      this.logger.log(
+        `WebRTC call declined from client ${client.id} for call ${data.callId}`
+      );
+
+      // Get authenticated user ID from socket
+      const userId = this.socketToUser.get(client.id);
+      if (!userId) {
+        client.emit("call:error", {
+          message: "Authentication required",
+          code: "AUTH_REQUIRED",
+        });
+        return;
+      }
+
+      // Use WebRTCSignalingService for business logic
+      const { callRecord } = await this.webRTCSignalingService.declineCall(
+        userId,
+        data
+      );
+
+      // Clear call timeout since call was declined
+      const timeoutId = this.callTimeouts.get(data.callId);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        this.callTimeouts.delete(data.callId);
+        this.logger.debug(
+          `Cleared call timeout for declined call: ${data.callId}`
+        );
+      }
+
+      // Notify call initiator về call decline
+      this.server.to(`call:${data.callId}`).emit("call:declined", {
+        callId: data.callId,
+        declinerId: userId,
+        reason: data.reason || "declined",
+        status: "declined",
+      });
+
+      // Confirm to decliner
+      client.emit("call:decline_confirmed", {
+        callId: data.callId,
+        status: "declined",
+      });
+
+      this.logger.log(`WebRTC call declined successfully: ${data.callId}`);
+    } catch (error) {
+      this.logger.error(
+        `Failed to decline WebRTC call: ${error.message}`,
+        error.stack
+      );
+      client.emit("call:error", {
+        message: error.message || "Failed to decline call",
+        code: "DECLINE_FAILED",
+      });
+    }
+  }
+
+  /**
+   * WebRTC Call Hangup Handler
+   *
+   * Handles call hangup và ends call session.
+   * Uses WebRTCSignalingService for business logic và state management.
+   *
+   * @param client - Socket client instance
+   * @param data - Call hangup data with reason
+   */
+  @SubscribeMessage("call:hangup")
+  async handleCallHangup(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: CallHangupDto
+  ): Promise<void> {
+    try {
+      this.logger.log(
+        `WebRTC call hangup from client ${client.id} for call ${data.callId}`
+      );
+
+      // Get authenticated user ID from socket
+      const userId = this.socketToUser.get(client.id);
+      if (!userId) {
+        client.emit("call:error", {
+          message: "Authentication required",
+          code: "AUTH_REQUIRED",
+        });
+        return;
+      }
+
+      // Use WebRTCSignalingService for business logic
+      const { callRecord } = await this.webRTCSignalingService.hangupCall(
+        userId,
+        data
+      );
+
+      // Clear call timeout since call was ended
+      const timeoutId = this.callTimeouts.get(data.callId);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        this.callTimeouts.delete(data.callId);
+        this.logger.debug(
+          `Cleared call timeout for ended call: ${data.callId}`
+        );
+      }
+
+      // Extract call duration from record
+      const callDuration = callRecord.duration || 0;
+
+      // Notify all participants that call ended
+      this.server.to(`call:${data.callId}`).emit("call:ended", {
+        callId: data.callId,
+        endedBy: userId,
+        reason: data.reason || "hangup",
+        duration: callDuration,
+        status: "ended",
+      });
+
+      // Remove all participants from call room
+      const sockets = await this.server
+        .in(`call:${data.callId}`)
+        .fetchSockets();
+      for (const socket of sockets) {
+        await socket.leave(`call:${data.callId}`);
+      }
+
+      // Confirm to hangup initiator
+      client.emit("call:hangup_confirmed", {
+        callId: data.callId,
+        status: "ended",
+        duration: callDuration,
+      });
+
+      this.logger.log(`WebRTC call ended successfully: ${data.callId}`);
+    } catch (error) {
+      this.logger.error(
+        `Failed to hangup WebRTC call: ${error.message}`,
+        error.stack
+      );
+      client.emit("call:error", {
+        message: error.message || "Failed to hangup call",
+        code: "HANGUP_FAILED",
+      });
+    }
+  }
+
+  /**
+   * WebRTC ICE Candidate Handler
+   *
+   * Handles ICE candidate exchange for WebRTC connectivity.
+   * Uses WebRTCSignalingService for business logic và state management.
+   *
+   * @param client - Socket client instance
+   * @param data - ICE candidate data
+   */
+  @SubscribeMessage("call:ice_candidate")
+  async handleIceCandidate(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: CallIceCandidateDto
+  ): Promise<void> {
+    try {
+      this.logger.debug(
+        `WebRTC ICE candidate from client ${client.id}, data:`,
+        data
+      );
+
+      // Get authenticated user ID from socket
+      const userId = this.socketToUser.get(client.id);
+      if (!userId) {
+        client.emit("call:error", {
+          message: "Authentication required",
+          code: "AUTH_REQUIRED",
+        });
+        return;
+      }
+
+      // Validate callId exists
+      if (!data.callId) {
+        this.logger.error(`ICE candidate failed: callId is missing`, data);
+        client.emit("call:error", {
+          message: "Call ID is required",
+          code: "MISSING_CALL_ID",
+        });
+        return;
+      }
+
+      this.logger.debug(
+        `Processing ICE candidate for call ${data.callId} from user ${userId}`
+      );
+
+      // Use WebRTCSignalingService for business logic
+      try {
+        await this.webRTCSignalingService.handleIceCandidate(userId, data);
+
+        // Forward ICE candidate to other participants in call room
+        client.to(`call:${data.callId}`).emit("call:ice_candidate", {
+          callId: data.callId,
+          fromUserId: userId,
+          candidate: data.candidate,
+        });
+
+        this.logger.debug(
+          `WebRTC ICE candidate forwarded for call ${data.callId} from user ${userId}`
+        );
+      } catch (serviceError) {
+        // Check if this is a "call not found" error which is expected after timeout
+        if (
+          serviceError.message &&
+          serviceError.message.includes("not found")
+        ) {
+          this.logger.debug(
+            `ICE candidate for ended call ${data.callId} from user ${userId} - gracefully ignored`
+          );
+          return; // Don't emit error to client for ended calls
+        }
+
+        // Re-throw other errors
+        throw serviceError;
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to handle WebRTC ICE candidate: ${error.message}`,
+        error.stack
+      );
+      client.emit("call:error", {
+        message: error.message || "Failed to process ICE candidate",
+        code: "ICE_CANDIDATE_FAILED",
+      });
+    }
+  }
+
+  /**
+   * WebRTC Call Renegotiation Handler
+   *
+   * Handles SDP renegotiation for media changes during call.
+   * Uses WebRTCSignalingService for business logic và state management.
+   *
+   * @param client - Socket client instance
+   * @param data - Renegotiation data with new SDP offer
+   */
+  @SubscribeMessage("call:renegotiate")
+  async handleCallRenegotiate(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: CallRenegotiateDto
+  ): Promise<void> {
+    try {
+      this.logger.log(
+        `WebRTC call renegotiation from client ${client.id} for call ${data.callId}`
+      );
+
+      // Get authenticated user ID from socket
+      const userId = this.socketToUser.get(client.id);
+      if (!userId) {
+        client.emit("call:error", {
+          message: "Authentication required",
+          code: "AUTH_REQUIRED",
+        });
+        return;
+      }
+
+      // Use WebRTCSignalingService for business logic
+      await this.webRTCSignalingService.handleRenegotiation(userId, data);
+
+      // Forward renegotiation offer to other participants in call room
+      client.to(`call:${data.callId}`).emit("call:renegotiate", {
+        callId: data.callId,
+        fromUserId: userId,
+        sdpOffer: data.sdpOffer,
+        reason: data.reason,
+      });
+
+      this.logger.log(
+        `WebRTC call renegotiation forwarded for ${data.reason} from user ${userId} in call ${data.callId}`
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to handle WebRTC call renegotiation: ${error.message}`,
+        error.stack
+      );
+      client.emit("call:error", {
+        message: error.message || "Failed to renegotiate call",
+        code: "RENEGOTIATE_FAILED",
+      });
+    }
+  }
+
+  /**
+   * WebRTC Media State Update Handler
+   *
+   * Handles media state changes during call (mute/unmute, video on/off).
+   * Uses WebRTCSignalingService for business logic và state management.
+   *
+   * @param client - Socket client instance
+   * @param data - Media state data
+   */
+  @SubscribeMessage("call:media_state")
+  async handleMediaStateUpdate(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: CallMediaStateDto
+  ): Promise<void> {
+    try {
+      this.logger.debug(
+        `WebRTC media state update from client ${client.id} for call ${data.callId}`
+      );
+
+      // Get authenticated user ID from socket
+      const userId = this.socketToUser.get(client.id);
+      if (!userId) {
+        client.emit("call:error", {
+          message: "Authentication required",
+          code: "AUTH_REQUIRED",
+        });
+        return;
+      }
+
+      // Use WebRTCSignalingService for business logic
+      await this.webRTCSignalingService.updateMediaState(userId, data);
+
+      // Broadcast media state to other participants in call room
+      client.to(`call:${data.callId}`).emit("call:media_state_changed", {
+        callId: data.callId,
+        userId: userId,
+        audioEnabled: data.audioEnabled,
+        videoEnabled: data.videoEnabled,
+        screenSharingEnabled: data.screenSharingEnabled,
+      });
+
+      this.logger.debug(
+        `WebRTC media state updated for user ${userId} in call ${data.callId}: audio=${data.audioEnabled}, video=${data.videoEnabled}, screen=${data.screenSharingEnabled}`
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to update WebRTC media state: ${error.message}`,
+        error.stack
+      );
+      client.emit("call:error", {
+        message: error.message || "Failed to update media state",
+        code: "MEDIA_STATE_FAILED",
+      });
+    }
+  }
+
+  // =============================================
+  // HELPER METHODS FOR CALLS
+  // =============================================
+
+  /**
+   * Generate unique call ID
+   */
+  private generateCallId(): string {
+    return `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Clean up call state when user disconnects
+   */
+  private async cleanupUserCallState(userId: string): Promise<void> {
+    try {
+      // Get user's active calls
+      const activeCalls = await this.callStateService.getUserActiveCalls(
+        userId
+      );
+
+      for (const callId of activeCalls) {
+        // Clear call timeout if exists
+        const timeoutId = this.callTimeouts.get(callId);
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          this.callTimeouts.delete(callId);
+          this.logger.debug(
+            `Cleared call timeout for disconnected user call: ${callId}`
+          );
+        }
+
+        // Notify other participants that user left
+        this.server.to(`call:${callId}`).emit("call:participant_left", {
+          callId,
+          userId,
+          reason: "disconnected",
+        });
+
+        // Remove user from call
+        await this.callStateService.removeParticipant(callId, userId);
+
+        // Check if call should be ended (no more participants)
+        const callState = await this.callStateService.getActiveCall(callId);
+        if (callState && callState.participants.length <= 1) {
+          await this.callStateService.endCall(callId);
+          this.server.to(`call:${callId}`).emit("call:ended", {
+            callId,
+            reason: "all_participants_left",
+          });
+        }
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to cleanup call state for user ${userId}: ${error.message}`,
+        error.stack
+      );
+    }
   }
 }

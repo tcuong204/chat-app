@@ -42,13 +42,23 @@
           "displayName": "YOUR_APP_DISPLAY_NAME"
         }
       ],
-      "expo-audio"
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone."
+        }
+      ],
+      [
+        "expo-video",
+        {
+          "supportsBackgroundPlayback": true,
+          "supportsPictureInPicture": true
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
     },
-    "assetBundlePatterns": [
-      "assets/fonts/*"
-    ]
+    "assetBundlePatterns": ["assets/fonts/*"]
   }
 }

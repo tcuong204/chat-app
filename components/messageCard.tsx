@@ -14,6 +14,7 @@ interface MessageCardProps {
     pinned?: boolean;
     typing?: boolean;
     hasVoice?: boolean;
+    isReaded?: boolean;
     unreadCount?: number;
   };
   onPress: (id: number) => void;
@@ -158,7 +159,9 @@ const MessageCard: React.FC<MessageCardProps> = ({
             currentRef?.close();
           }
         }}
-        className="flex-row items-center px-6 py-4 border-b border-gray-100"
+        className={`flex-row items-center px-6 py-4 border-b ${
+          chat.isReaded ? "bg-gray-100" : "border-gray-500"
+        } `}
       >
         <View className="relative ">
           <Image
@@ -177,7 +180,7 @@ const MessageCard: React.FC<MessageCardProps> = ({
           )}
           {chat.pinned && (
             <View className="absolute -top-1 -right-1 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
-              <Text className="text-white text-xs">📌</Text>
+              <AntDesign name="pushpin" size={12} color="white" />
             </View>
           )}
         </View>
@@ -200,14 +203,14 @@ const MessageCard: React.FC<MessageCardProps> = ({
                   className="text-gray-600 text-sm font-nunito"
                   numberOfLines={1}
                 >
-                  {chat.hasVoice && "🎵 "}
-                  {chat.lastMessage}
+                  {chat.hasVoice ? "🎵 " : ""}
+                  {chat.lastMessage || ""}
                 </Text>
               )}
             </View>
             <View className="flex items-end">
               <Text className="text-gray-500 text-sm font-nunito">
-                {chat.time}
+                {chat.time || ""}
               </Text>
               {chat.unreadCount && chat.unreadCount > 0 && (
                 <View className="mt-1 bg-red-500 rounded-full px-2 py-1 min-w-[20px] items-center">
