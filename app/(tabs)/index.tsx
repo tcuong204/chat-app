@@ -115,7 +115,7 @@ export default function Index() {
             // Lấy access token từ SecureStore
             const response = await deleteConversation(conversationId);
             showSuccess("Xóa nhóm thành công");
-            router.push("/(tabs)");
+            fetchConversations();
           } catch (error) {
             console.error("Lỗi khi đăng xuất:", error);
             // Vẫn xóa local data và chuyển trang ngay cả khi API fail
@@ -515,7 +515,7 @@ export default function Index() {
       <MessageCard
         chat={{
           id: item.id,
-          isReaded: socketLastMessage?.isReaded || false,
+          isRead: socketLastMessage?.isRead,
           name: item.name || item.fullName,
           lastMessage: lastMessageContent,
           time: lastMessageTime,

@@ -7,8 +7,7 @@ const replaceLocalhost = (url: string | undefined) => {
 
 export const openOfficeFile = async (
   downloadUrl: string | undefined,
-  fileName: string | undefined,
-  token: string | null
+  fileName: string | undefined
 ) => {
   try {
     const processedUrl = replaceLocalhost(downloadUrl);
@@ -16,12 +15,7 @@ export const openOfficeFile = async (
 
     const downloadResumable = FileSystem.createDownloadResumable(
       processedUrl!,
-      fileUri,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
+      fileUri
     );
 
     const result = await downloadResumable.downloadAsync();

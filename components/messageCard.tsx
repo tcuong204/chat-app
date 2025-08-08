@@ -14,7 +14,7 @@ interface MessageCardProps {
     pinned?: boolean;
     typing?: boolean;
     hasVoice?: boolean;
-    isReaded?: boolean;
+    isRead?: boolean;
     unreadCount?: number;
   };
   onPress: (id: number) => void;
@@ -160,7 +160,9 @@ const MessageCard: React.FC<MessageCardProps> = ({
           }
         }}
         className={`flex-row items-center px-6 py-4 border-b ${
-          chat.isReaded ? "bg-gray-100" : "border-gray-500"
+          !chat.isRead || chat.isRead == undefined
+            ? "bg-gray-100"
+            : "border-gray-500"
         } `}
       >
         <View className="relative ">

@@ -6,8 +6,10 @@ import {
   sendMessage,
 } from "@/api/messageApi";
 import { uploadFile } from "@/api/uploadFile";
-import AuthenticatedMediaViewer from "@/components/authenticatedImage";
+import AudioPlayer from "@/components/audioPlayer";
 import { images } from "@/constants/images";
+import { default as TypingDots } from "@/utils/AnimatedTypingDots";
+import AuthenticatedMediaViewer from "@/utils/authenticatedImage";
 import { showError, showSuccess } from "@/utils/customToast";
 import { openOfficeFile } from "@/utils/openOfficeFile";
 import { getAccount } from "@/utils/secureStore";
@@ -114,7 +116,6 @@ const MessageScreen = () => {
   );
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
-  const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [lastMessage, setLastMessage] = useState<any>(null);
   const [unreadCount, setUnreadCount] = useState<number>(0);
@@ -124,17 +125,125 @@ const MessageScreen = () => {
 
   const inputAnim = useRef(new Animated.Value(0)).current;
   const inputRef = useRef<TextInput>(null);
-  const flatListRef = useRef<FlatList<Message>>(null);
+  type TypingItem = { id: string; kind: "typing" };
+  type ChatItem = Message | TypingItem;
+  const flatListRef = useRef<FlatList<ChatItem>>(null);
   const [message, setMessage] = useState("");
   const params = useLocalSearchParams();
-  const [token, setToken] = useState<string | null>(null);
   const conversationId = params.id as string;
   // Optimistic UI: Store local messages before server confirmation
   const [localMessages, setLocalMessages] = useState<{
     [key: string]: Message;
   }>({});
   console.log("messsages", messages);
+  const [typingUsers, setTypingUsers] = useState<
+    Array<{ userId: string; userName: string }>
+  >([]);
+  const lastTypingEventRef = useRef<number>(0);
+  const [isCurrentUserTyping, setIsCurrentUserTyping] = useState(false);
 
+  const [readReceipts, setReadReceipts] = useState<{
+    [messageId: string]: {
+      [userId: string]: {
+        readAt: number;
+        userName?: string;
+      };
+    };
+  }>({});
+  const handleReadReceipts = useCallback(
+    (data: {
+      messageIds: string[];
+      userId: string;
+      readAt: number;
+      conversationId: string;
+    }) => {
+      if (
+        data.conversationId !== conversationId ||
+        data.userId === currentUserId
+      ) {
+        return; // Không xử lý read receipt của chính mình
+      }
+
+      console.log("📖 Received read receipts:", data);
+
+      setReadReceipts((prev) => {
+        const updated = { ...prev };
+
+        data.messageIds.forEach((messageId) => {
+          if (!updated[messageId]) {
+            updated[messageId] = {};
+          }
+          updated[messageId][data.userId] = {
+            readAt: data.readAt,
+            userName: "User", // Có thể lấy từ conversation participants
+          };
+        });
+
+        return updated;
+      });
+
+      // Cập nhật status của messages
+      setMessages((prevMessages) =>
+        prevMessages.map((msg) => {
+          if (
+            data.messageIds.includes(msg.id) &&
+            msg.senderId === currentUserId
+          ) {
+            return { ...msg, status: "read" };
+          }
+          return msg;
+        })
+      );
+    },
+    [conversationId, currentUserId]
+  );
+
+  // 3. Thêm function xử lý single message read
+  const handleSingleMessageRead = useCallback(
+    (data: {
+      messageId: string;
+      readBy: string;
+      readAt: Date;
+      deviceId: string;
+    }) => {
+      if (data.readBy === currentUserId) {
+        return; // Không xử lý read receipt của chính mình
+      }
+
+      console.log("📖 Single message read:", data);
+
+      setReadReceipts((prev) => ({
+        ...prev,
+        [data.messageId]: {
+          ...prev[data.messageId],
+          [data.readBy]: {
+            readAt: new Date(data.readAt).getTime(),
+            userName: "User",
+          },
+        },
+      }));
+
+      // Cập nhật status của message
+      setMessages((prevMessages) =>
+        prevMessages.map((msg) => {
+          if (msg.id === data.messageId && msg.senderId === currentUserId) {
+            return { ...msg, status: "read" };
+          }
+          return msg;
+        })
+      );
+    },
+    [currentUserId]
+  );
+
+  const getMessagesWithTyping = (): ChatItem[] => {
+    const messagesWithTyping: ChatItem[] = [...messages];
+    const othersTyping = typingUsers.some((u) => u.userId !== currentUserId);
+    if (othersTyping) {
+      messagesWithTyping.push({ id: "typing-indicator", kind: "typing" });
+    }
+    return messagesWithTyping;
+  };
   const handleFocus = () => {
     setInputFocused(true);
     Animated.timing(inputAnim, {
@@ -392,51 +501,10 @@ const MessageScreen = () => {
           dimensions: response.dimensions,
         },
       };
-
-      // Create optimistic message
-      // const optimisticMessage: Message = {
-      //   id: `local_${Date.now()}`,
-      //   localId: `local_${Date.now()}`,
-      //   conversationId,
-      //   senderId: currentUserId || "current_user",
-      //   sender: {
-      //     id: currentUserId || "current_user",
-      //     fullName: "Bạn",
-      //     username: currentUserId || "current_user",
-      //     avatarUrl: null,
-      //     isOnline: true,
-      //     lastSeen: new Date().toISOString(),
-      //   },
-      //   content: (response.fileName as string) || "Tệp đính kèm",
-      //   type: type,
-      //   attachments: [
-      //     // Đảm bảo có mảng attachments
-      //     {
-      //       fileId: response.fileId,
-      //       fileName: response.fileName, // Sử dụng tên file thực tế
-      //       fileSize: response.fileSize,
-      //       mimeType: response.mimeType,
-      //       downloadUrl: response.downloadUrl,
-      //     },
-      //   ],
-      //   status: "sent",
-      //   createdAt: new Date().toISOString(),
-      //   updatedAt: new Date().toISOString(),
-      // };
-
       // Send via socket
       if (socketManager.isSocketConnected()) {
         socketManager.quickShareFile(messageData);
         console.log("gui thang cong", messageData);
-        // Update optimistic message status to sent
-        // setLocalMessages((prev) => ({
-        //   ...prev,
-        //   [optimisticMessage.localId!]: {
-        //     ...prev[optimisticMessage.localId!],
-        //     status: "sent",
-        //   },
-        // }));
-        // handleNewMessage(optimisticMessage);
       } else {
         // Fallback to REST API
         await sendMessage(messageData);
@@ -603,13 +671,6 @@ const MessageScreen = () => {
   };
 
   // Handle typing indicators
-  const handleTypingStart = useCallback(() => {
-    socketManager.startTyping(conversationId);
-  }, [conversationId]);
-
-  const handleTypingStop = useCallback(() => {
-    socketManager.stopTyping(conversationId);
-  }, [conversationId]);
   // Socket event handlers
   useEffect(() => {
     socketManager.connect().then(() => {
@@ -617,6 +678,45 @@ const MessageScreen = () => {
       socketManager.onMessage(handleNewMessage);
     });
 
+    const handleTypingUsers = (data: {
+      conversationId: string;
+      typingUsers: Array<{ userId: string; userName: string }>;
+      timestamp: number;
+    }) => {
+      console.log("⌨️ Typing users response:", data);
+      if (data.conversationId === conversationId) {
+        setTypingUsers(data.typingUsers || []);
+      }
+    };
+    const handleUserTyping = (data: {
+      conversationId: string;
+      userId: string;
+      userName: string;
+      isTyping: boolean;
+      timestamp: number;
+    }) => {
+      console.log("⌨️ User typing event:", data);
+      if (
+        data.conversationId === conversationId &&
+        data.userId !== currentUserId
+      ) {
+        setTypingUsers((prev) => {
+          if (data.isTyping) {
+            // Thêm user vào danh sách đang gõ nếu chưa có
+            if (!prev.find((user) => user.userId === data.userId)) {
+              return [
+                ...prev,
+                { userId: data.userId, userName: data.userName },
+              ];
+            }
+            return prev;
+          } else {
+            // Xóa user khỏi danh sách đang gõ
+            return prev.filter((user) => user.userId !== data.userId);
+          }
+        });
+      }
+    };
     // Listen for new file shared events
     const handleFileShared = (data: any) => {
       console.log("📎 File shared event received:", data);
@@ -801,12 +901,21 @@ const MessageScreen = () => {
     };
     // Listen for typing indicators
     const handleTyping = (data: any) => {
+      console.log("⌨️ Legacy typing event:", data);
       if (data.conversationId === conversationId) {
-        if (data.type === "started") {
-          setTypingUsers((prev) => [...prev, data.userName]);
+        if (data.type === "started" && data.userId !== currentUserId) {
+          setTypingUsers((prev) => {
+            if (!prev.find((user) => user.userId === data.userId)) {
+              return [
+                ...prev,
+                { userId: data.userId, userName: data.userName },
+              ];
+            }
+            return prev;
+          });
         } else if (data.type === "stopped") {
           setTypingUsers((prev) =>
-            prev.filter((user) => user !== data.userName)
+            prev.filter((user) => user.userId !== data.userId)
           );
         }
       }
@@ -904,8 +1013,13 @@ const MessageScreen = () => {
 
     // Add event listeners
     socketManager.onMessage(handleNewMessage);
+    socketManager.getSocket()?.on("typing_users_response", handleTypingUsers);
+    socketManager.getSocket()?.on("user_typing", handleUserTyping);
     socketManager.onTyping(handleTyping);
     socketManager.onStatusUpdate(handleStatusUpdate);
+    socketManager.getSocket()?.on("batch_read_receipts", handleReadReceipts);
+    socketManager.getSocket()?.on("message.read", handleSingleMessageRead);
+
     socketManager.onFileEvent((data) => {
       if (data.type === "new_file_message") {
         handleNewFileMessage(data);
@@ -952,11 +1066,14 @@ const MessageScreen = () => {
     // Request last message from server
     if (socketManager.isSocketConnected()) {
       socketManager.requestLastMessages([conversationId]);
+      socketManager.getTypingUsers(conversationId);
     }
 
     // Cleanup
     return () => {
       socketManager.offFileEvent(handleFileShared);
+      socketManager.getSocket()?.off("batch_read_receipts", handleReadReceipts);
+      socketManager.getSocket()?.off("message.read", handleSingleMessageRead);
       socketManager.getSocket()?.off("quick_file_shared", handleFileShared);
       socketManager
         .getSocket()
@@ -967,6 +1084,10 @@ const MessageScreen = () => {
         ?.off("new_batch_files_message", handleNewBatchFilesMessage);
       socketManager.leaveConversation(conversationId);
       socketManager.offMessage(handleNewMessage);
+      socketManager
+        .getSocket()
+        ?.off("typing_users_response", handleTypingUsers);
+      socketManager.getSocket()?.off("user_typing", handleUserTyping);
       socketManager.offTyping(handleTyping);
       socketManager.offStatusUpdate(handleStatusUpdate);
       socketManager.getSocket()?.off("new_message", handleSocketNewMessage);
@@ -983,44 +1104,63 @@ const MessageScreen = () => {
   }, [conversationId]);
 
   // Handle message input changes for typing indicators
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleTypingStart = useCallback(() => {
+    const now = Date.now();
+    if (!isCurrentUserTyping || now - lastTypingEventRef.current > 1000) {
+      setIsCurrentUserTyping(true);
+      socketManager.startTyping(conversationId);
+      lastTypingEventRef.current = now;
+      console.log("⌨️ Started typing at:", now);
+    }
+  }, [conversationId, isCurrentUserTyping]);
+
+  const handleTypingStop = useCallback(() => {
+    if (isCurrentUserTyping) {
+      setIsCurrentUserTyping(false);
+      socketManager.stopTyping(conversationId);
+      lastTypingEventRef.current = 0;
+      console.log("⌨️ Stopped typing");
+    }
+  }, [conversationId, isCurrentUserTyping]);
   useEffect(() => {
-    let typingTimer: ReturnType<typeof setTimeout>;
+    // Clear previous timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
 
     if (message.length > 0) {
+      // Start typing if not already typing
       handleTypingStart();
-      typingTimer = setTimeout(() => {
+
+      // Set timeout to stop typing after 5 seconds of inactivity
+      typingTimeoutRef.current = setTimeout(() => {
         handleTypingStop();
-      }, 2000);
+      }, 5000);
     } else {
+      // Stop typing immediately when input is empty
       handleTypingStop();
     }
 
+    // Cleanup function
     return () => {
-      if (typingTimer) {
-        clearTimeout(typingTimer);
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
       }
     };
   }, [message, handleTypingStart, handleTypingStop]);
   useEffect(() => {
-    const getToken = async () => {
-      try {
-        const storedToken = await getAccount();
-        console.log("🔑 Getting token from storage:", storedToken);
-        if (storedToken && (storedToken as any).accessToken) {
-          const accessToken = (storedToken as any).accessToken;
-          console.log(
-            "✅ Access token found:",
-            accessToken.substring(0, 20) + "..."
-          );
-          setToken(accessToken);
-        } else {
-          console.error("❌ No access token found in storage");
-        }
-      } catch (error) {
-        console.error("❌ Error getting token:", error);
+    return () => {
+      // Stop typing when leaving the screen
+      if (isCurrentUserTyping) {
+        socketManager.stopTyping(conversationId);
+      }
+      // Clear timeout
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
       }
     };
-    getToken();
   }, []);
   // Mark messages as read when conversation is viewed
   useEffect(() => {
@@ -1058,6 +1198,50 @@ const MessageScreen = () => {
     }
   }, [conversationId]);
 
+  const getMessageReadStatus = useCallback(
+    (messageId: string, senderId: string) => {
+      if (senderId !== currentUserId) {
+        return null; // Chỉ hiển thị read status cho tin nhắn của mình
+      }
+
+      const messageReadReceipts = readReceipts[messageId];
+      if (
+        !messageReadReceipts ||
+        Object.keys(messageReadReceipts).length === 0
+      ) {
+        return null;
+      }
+
+      // Lấy thời gian đọc gần nhất
+      const latestReadTime = Math.max(
+        ...Object.values(messageReadReceipts).map((receipt) => receipt.readAt)
+      );
+
+      const readers = Object.values(messageReadReceipts);
+
+      return {
+        isRead: true,
+        readCount: readers.length,
+        latestReadTime,
+        readers,
+      };
+    },
+    [readReceipts, currentUserId]
+  );
+
+  // 6. Function để kiểm tra có phải tin nhắn cuối cùng không
+  const isLastMessageFromSender = useCallback(
+    (currentIndex: number, messages: Message[]) => {
+      // Kiểm tra xem có tin nhắn nào sau này từ cùng sender không
+      for (let i = currentIndex + 1; i < messages.length; i++) {
+        if (messages[i].senderId === messages[currentIndex].senderId) {
+          return false;
+        }
+      }
+      return true;
+    },
+    []
+  );
   // Render message item
   const renderMessage = ({ item, index }: { item: Message; index: number }) => {
     // Check if message has attachments
@@ -1070,6 +1254,10 @@ const MessageScreen = () => {
     const isOwnMessage = currentUserId
       ? item.senderId === currentUserId
       : false;
+    const readStatus = getMessageReadStatus(item.id, item.senderId);
+    const isLastFromSender = isLastMessageFromSender(index, messages);
+    const shouldShowReadStatus =
+      isOwnMessage && isLastFromSender && readStatus?.isRead;
 
     // Xử lý thời gian
     const shouldShowTimestamp = (() => {
@@ -1123,25 +1311,26 @@ const MessageScreen = () => {
             {isImage || (isVideo && attachment?.downloadUrl) ? (
               <AuthenticatedMediaViewer
                 mediaUrl={attachment && attachment.downloadUrl}
-                token={token}
                 mediaType={type}
+              />
+            ) : isAudio && attachment?.downloadUrl ? (
+              <AudioPlayer
+                audioUrl={attachment.downloadUrl}
+                fileName={attachment.fileName}
+                isOwnMessage={isOwnMessage}
+                duration={attachment.duration}
               />
             ) : (
               <View className="flex flex-row items-center space-x-2 p-2 bg-white/20 rounded-lg">
                 <View className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
-                  {isAudio ? (
-                    <FontAwesome name="music" size={16} color="white" />
-                  ) : (
-                    <AntDesign name="file1" size={16} color="white" />
-                  )}
+                  {<AntDesign name="file1" size={16} color="white" />}
                 </View>
                 <TouchableOpacity
                   className=""
                   onPress={() =>
                     openOfficeFile(
                       attachment?.downloadUrl,
-                      attachment?.fileName,
-                      token
+                      attachment?.fileName
                     )
                   }
                 >
@@ -1185,7 +1374,7 @@ const MessageScreen = () => {
             </View>
             <View>
               <Text
-                className={`font-medium ${isOwnMessage ? "text-white" : ""}`}
+                className={`font-medium  ${isOwnMessage ? "text-white" : ""}`}
               >
                 {item.content}
               </Text>
@@ -1227,11 +1416,29 @@ const MessageScreen = () => {
               style={{ borderRadius: 16, maxWidth: "90%" }}
               className="max-w-xs"
             >
-              <View className="px-4 py-3">{renderMessageContent()}</View>
+              <View className={`${hasAttachments ? "" : "px-4 py-3"} `}>
+                {renderMessageContent()}
+              </View>
             </LinearGradient>
           ) : (
-            <View className="max-w-xs px-4 py-3 rounded-2xl bg-gray-100 rounded-bl-md">
-              {renderMessageContent()}
+            <View className="flex flex-row items-end">
+              <Image
+                source={
+                  typeof item.sender?.avatarUrl === "string"
+                    ? { uri: item.sender?.avatarUrl }
+                    : images.defaultAvatar
+                }
+                className="w-14 h-14 rounded-full mr-2"
+                resizeMode="cover"
+                style={{ width: 30, height: 30 }}
+              />
+              <View
+                className={`${
+                  hasAttachments ? "" : "px-4 py-3"
+                } max-w-xs rounded-2xl bg-gray-100 rounded-bl-md `}
+              >
+                {renderMessageContent()}
+              </View>
             </View>
           )}
           {(!messages[index + 1] ||
@@ -1246,31 +1453,39 @@ const MessageScreen = () => {
               {isOwnMessage && (
                 <View className="flex flex-row items-center">
                   {item.status === "sent" && (
-                    <Text className="text-xs text-gray-400">Đang gửi...</Text>
-                  )}
-                  {item.status === "sent" && (
-                    <AntDesign name="check" size={12} color="#10b981" />
+                    <>
+                      <Text className="text-xs text-gray-400">Đã gửi</Text>
+                      <AntDesign name="check" size={12} color="#10b981" />
+                    </>
                   )}
                   {item.status === "delivered" && (
-                    <View className="flex flex-row">
-                      <AntDesign name="check" size={12} color="#10b981" />
-                      <AntDesign
-                        name="check"
-                        size={12}
-                        color="#10b981"
-                        style={{ marginLeft: -4 }}
-                      />
+                    <View className="flex flex-row items-center">
+                      <Text className="text-xs text-gray-400 mr-1">
+                        Đã nhận
+                      </Text>
+                      <View className="flex flex-row">
+                        <AntDesign name="check" size={12} color="#10b981" />
+                        <AntDesign
+                          name="check"
+                          size={12}
+                          color="#10b981"
+                          style={{ marginLeft: -4 }}
+                        />
+                      </View>
                     </View>
                   )}
-                  {item.status === "read" && (
-                    <View className="flex flex-row">
-                      <AntDesign name="check" size={12} color="#3b82f6" />
-                      <AntDesign
-                        name="check"
-                        size={12}
-                        color="#3b82f6"
-                        style={{ marginLeft: -4 }}
-                      />
+                  {item.status === "read" && !shouldShowReadStatus && (
+                    <View className="flex flex-row items-center">
+                      <Text className="text-xs text-blue-600">Đã đọc</Text>
+                      <View className="flex flex-row ml-1">
+                        <AntDesign name="check" size={12} color="#3b82f6" />
+                        <AntDesign
+                          name="check"
+                          size={12}
+                          color="#3b82f6"
+                          style={{ marginLeft: -4 }}
+                        />
+                      </View>
                     </View>
                   )}
                   {/* {item.status === "failed" && (
@@ -1360,8 +1575,13 @@ const MessageScreen = () => {
 
           {/* Messages */}
           <FlatList
-            data={messages}
-            renderItem={renderMessage}
+            data={getMessagesWithTyping()} // Thay vì messages
+            renderItem={({ item, index }) => {
+              if ((item as any).kind === "typing") {
+                return <TypingDots />;
+              }
+              return renderMessage({ item: item as Message, index });
+            }}
             keyExtractor={(item) => item.id}
             className="flex-1 p-4 bg-white"
             contentContainerStyle={{ paddingBottom: 16 }}
@@ -1402,7 +1622,6 @@ const MessageScreen = () => {
             }}
             showsVerticalScrollIndicator={false}
           />
-
           {/* Input */}
           <View className="bg-white px-2 pt-3 border-t border-gray-200">
             <View className="flex flex-row items-center space-x-3">

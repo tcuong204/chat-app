@@ -1,9 +1,8 @@
+import { LOCALIP } from "@/constants/localIp";
 import { getAccount } from "@/utils/secureStore";
 import axios from "axios";
-//http://192.168.1.11:3000/api/v1
-//http://172.20.10.3:3000/api/v1
 const axiosInstance = axios.create({
-  baseURL: "http://192.168.0.102:3000/api/v1", // Thay đổi URL này cho phù hợp
+  baseURL: `http://${LOCALIP}/api/v1`, // Thay đổi URL này cho phù hợp
   timeout: 10000, // 10 giây
   headers: {
     "Content-Type": "application/json",

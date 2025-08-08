@@ -85,17 +85,13 @@ const _layout = () => {
         <Tabs
           screenOptions={{
             tabBarShowLabel: false,
-            tabBarItemStyle: {
-              width: "100%",
-              height: "100%",
-              justifyContent: "center",
-              alignItems: "center",
-            },
             tabBarStyle: {
-              borderStartStartRadius: 20,
-              borderTopRightRadius: 20,
+              position: "absolute",
+              bottom: 0,
+              left: 0,
+              right: 0,
+              elevation: 0,
               marginBottom: 0,
-              height: 52,
               overflow: "hidden",
               backgroundColor: "#fff",
               borderWidth: 2,

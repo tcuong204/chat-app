@@ -1,8 +1,55 @@
+import { LOCALIP } from "@/constants/localIp";
 import { io, Socket } from "socket.io-client";
 import { Message, SendMessageRequest } from "../api/messageApi";
 import { getAccount } from "./secureStore";
 
 // Socket events from API documentation
+interface BatchMarkReadDto {
+  messageIds: string[];
+  conversationId: string;
+  readAt: number;
+}
+
+interface BatchMarkDeliveredDto {
+  messageIds: string[];
+  conversationId: string;
+  deliveredAt: number;
+}
+
+interface RequestStatusSyncDto {
+  conversationId: string;
+  messageIds?: string[];
+  since?: number;
+}
+
+interface ConfirmMessageDeliveryDto {
+  messageId: string;
+  conversationId: string;
+  deliveredAt: number;
+}
+
+interface RetryMessageDeliveryDto {
+  messageId: string;
+  conversationId: string;
+}
+
+interface UpdatePresenceDto {
+  status: string;
+  statusMessage?: string;
+}
+
+interface BulkPresenceRequestDto {
+  userIds: string[];
+}
+
+interface TypingStatusDto {
+  conversationId: string;
+  userId: string;
+  userName: string;
+  isTyping: boolean;
+  timestamp: number;
+}
+
 export interface SocketEvents {
   // Outgoing events (Client → Server)
   send_message: (messageData: SendMessageRequest) => void;
@@ -26,7 +73,13 @@ export interface SocketEvents {
     userId: string;
     readAt: number;
   }) => void;
-
+  batch_mark_read: (data: BatchMarkReadDto) => void;
+  batch_mark_delivered: (data: BatchMarkDeliveredDto) => void;
+  request_status_sync: (data: RequestStatusSyncDto) => void;
+  confirm_message_delivery: (data: ConfirmMessageDeliveryDto) => void;
+  retry_message_delivery: (data: RetryMessageDeliveryDto) => void;
+  update_presence: (data: UpdatePresenceDto) => void;
+  get_bulk_presence: (data: BulkPresenceRequestDto) => void;
   // Incoming events (Server → Client) - Updated to match server
   "message.sent": (data: {
     message: Message;
@@ -141,6 +194,56 @@ export interface SocketEvents {
     }>;
     timestamp: number;
   }) => void;
+  user_typing: (data: TypingStatusDto) => void;
+  typing_users_response: (data: {
+    conversationId: string;
+    typingUsers: Array<{ userId: string; userName: string }>;
+    timestamp: number;
+  }) => void;
+  batch_delivery_updates: (data: {
+    updates: Array<{
+      messageId: string;
+      userId: string;
+      status: string;
+      timestamp: number;
+    }>;
+    timestamp: number;
+  }) => void;
+  batch_read_receipts: (data: {
+    userId: string;
+    messageIds: string[];
+    timestamp: number;
+  }) => void;
+  status_sync_response: (data: {
+    conversationId: string;
+    message: any;
+    timestamp: number;
+  }) => void;
+  message_delivery_confirmed: (data: {
+    messageId: string;
+    userId: string;
+    status: string;
+    timestamp: number;
+  }) => void;
+  message_retry_sent: (data: { messageId: string; timestamp: number }) => void;
+  retry_message_error: (data: { messageId: string; error: string }) => void;
+  contact_presence_update: (data: {
+    userId: string;
+    status: string;
+    lastSeen: number;
+    statusMessage?: string;
+    timestamp: number;
+  }) => void;
+  bulk_presence_response: (data: {
+    presences: Array<{
+      userId: string;
+      status: string;
+      lastSeen: number;
+      statusMessage?: string;
+    }>;
+    onlineCount: number;
+    timestamp: number;
+  }) => void;
 }
 
 class SocketManager {
@@ -183,7 +286,7 @@ class SocketManager {
             }
 
             // Create socket connection
-            this.socket = io("http://192.168.0.102:3000/chat", {
+            this.socket = io(`http://${LOCALIP}/chat`, {
               //http://192.168.1.11:3000
               auth: {
                 token: accessToken,
@@ -268,6 +371,8 @@ class SocketManager {
     this.socket.off("new_message");
     this.socket.off("offline_messages_batch");
 
+    this.socket.off("batch_read_receipts");
+    this.socket.off("message.read");
     // Typing events
     this.socket.off("typing_started");
     this.socket.off("typing_stopped");
@@ -282,7 +387,17 @@ class SocketManager {
     this.socket.off("conversation_updated");
     this.socket.off("conversation_last_message_update");
     this.socket.off("conversations_last_messages_response");
-
+    //New event
+    this.socket.off("user_typing");
+    this.socket.off("typing_users_response");
+    this.socket.off("batch_delivery_updates");
+    this.socket.off("batch_read_receipts");
+    this.socket.off("status_sync_response");
+    this.socket.off("message_delivery_confirmed");
+    this.socket.off("message_retry_sent");
+    this.socket.off("retry_message_error");
+    this.socket.off("contact_presence_update");
+    this.socket.off("bulk_presence_response");
     // Reconnection events (keep existing ones, don't duplicate)
     this.socket.off("reconnect");
     this.socket.off("reconnect_attempt");
@@ -365,17 +480,24 @@ class SocketManager {
       } as any);
     });
 
-    this.socket.on("message.read", (data) => {
-      console.log("📖 Message read:", data.messageId, "by:", data.readBy);
+    this.socket.on("batch_read_receipts", (data) => {
+      console.log("📖 Batch read receipts received:", data);
       this.notifyStatusListeners({
+        type: "batch_read_receipts",
+        ...data,
+      });
+    });
+
+    this.socket.on("message.read", (data) => {
+      console.log("📖 Single message read:", data);
+      this.notifyStatusListeners({
+        type: "message_read",
         messageId: data.messageId,
-        status: "read",
-        userId: data.readBy,
+        readBy: data.readBy,
         readAt: data.readAt,
         deviceId: data.deviceId,
       });
     });
-
     this.socket.on("message.status.updated", (data) => {
       console.log("📊 Message status updated:", data);
       this.notifyStatusListeners({
@@ -415,6 +537,26 @@ class SocketManager {
     });
 
     // Typing events
+    this.socket.on("user_typing", (data) => {
+      this.notifyTypingListeners({
+        conversationId: data.conversationId,
+        userId: data.userId,
+        userName: data.userName,
+        type: data.isTyping ? "started" : "stopped",
+        isTyping: data.isTyping,
+        timestamp: data.timestamp,
+      });
+    });
+
+    this.socket.on("typing_users_response", (data) => {
+      console.log("⌨️ Typing users response:", data);
+      this.notifyTypingListeners({
+        type: "typing_users_response",
+        conversationId: data.conversationId,
+        typingUsers: data.typingUsers,
+        timestamp: data.timestamp,
+      });
+    });
     this.socket.on("typing_started", (data) => {
       console.log("⌨️ User started typing:", data);
       this.notifyTypingListeners({ ...data, type: "started" });
@@ -525,26 +667,27 @@ class SocketManager {
       console.log("❌ Socket not connected for mark as read");
       return;
     }
+
     console.log("📖 Marking messages as read:", messageIds);
-    this.socket.emit("mark_as_read", {
+
+    // Sử dụng batch_mark_read thay vì mark_as_read
+    this.socket.emit("batch_mark_read", {
       conversationId,
       messageIds,
-      userId,
       readAt: Date.now(),
     });
   }
-
   // Typing indicators
   startTyping(conversationId: string) {
     if (!this.socket || !this.isConnected) return;
     console.log("⌨️ Starting typing in conversation:", conversationId);
-    this.socket.emit("typing_start", conversationId);
+    this.socket.emit("typing_start", { conversationId });
   }
 
   stopTyping(conversationId: string) {
     if (!this.socket || !this.isConnected) return;
     console.log("⌨️ Stopping typing in conversation:", conversationId);
-    this.socket.emit("typing_stop", conversationId);
+    this.socket.emit("typing_stop", { conversationId });
   }
 
   // Join/Leave conversation
@@ -593,6 +736,84 @@ class SocketManager {
     this.socket.emit("message_delivered", messageData);
   }
 
+  batchMarkRead(data: {
+    messageIds: string[];
+    conversationId: string;
+    readAt: number;
+  }) {
+    if (!this.socket || !this.isConnected) {
+      console.log("❌ Socket not connected for batch mark read");
+      return;
+    }
+    console.log("📖 Batch marking messages as read:", data.messageIds);
+    this.socket.emit("batch_mark_read", data);
+  }
+
+  batchMarkDelivered(data: BatchMarkDeliveredDto) {
+    if (!this.socket || !this.isConnected) {
+      console.log("❌ Socket not connected for batch mark delivered");
+      return;
+    }
+    console.log("📨 Batch marking messages as delivered:", data.messageIds);
+    this.socket.emit("batch_mark_delivered", data);
+  }
+
+  requestStatusSync(data: RequestStatusSyncDto) {
+    if (!this.socket || !this.isConnected) {
+      console.log("❌ Socket not connected for status sync");
+      return;
+    }
+    console.log(
+      "🔄 Requesting status sync for conversation:",
+      data.conversationId
+    );
+    this.socket.emit("request_status_sync", data);
+  }
+
+  confirmMessageDelivery(data: ConfirmMessageDeliveryDto) {
+    if (!this.socket || !this.isConnected) {
+      console.log("❌ Socket not connected for confirming message delivery");
+      return;
+    }
+    console.log("📨 Confirming message delivery:", data.messageId);
+    this.socket.emit("confirm_message_delivery", data);
+  }
+
+  retryMessageDelivery(data: RetryMessageDeliveryDto) {
+    if (!this.socket || !this.isConnected) {
+      console.log("❌ Socket not connected for retrying message delivery");
+      return;
+    }
+    console.log("🔄 Retrying message delivery:", data.messageId);
+    this.socket.emit("retry_message_delivery", data);
+  }
+
+  updatePresence(data: UpdatePresenceDto) {
+    if (!this.socket || !this.isConnected) {
+      console.log("❌ Socket not connected for updating presence");
+      return;
+    }
+    console.log("🟢 Updating presence:", data.status);
+    this.socket.emit("update_presence", data);
+  }
+
+  getBulkPresence(data: BulkPresenceRequestDto) {
+    if (!this.socket || !this.isConnected) {
+      console.log("❌ Socket not connected for getting bulk presence");
+      return;
+    }
+    console.log("🟢 Requesting bulk presence for users:", data.userIds);
+    this.socket.emit("get_bulk_presence", data);
+  }
+
+  getTypingUsers(conversationId: string) {
+    if (!this.socket || !this.isConnected) {
+      console.log("❌ Socket not connected for getting typing users");
+      return;
+    }
+    console.log("⌨️ Requesting typing users for conversation:", conversationId);
+    this.socket.emit("get_typing_users", { conversationId });
+  }
   // Request last messages for conversations
   requestLastMessages(conversationIds: string[]) {
     if (!this.socket || !this.isConnected) {

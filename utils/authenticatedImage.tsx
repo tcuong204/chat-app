@@ -1,3 +1,4 @@
+import { LOCALIP } from "@/constants/localIp";
 import AntDesign from "@expo/vector-icons/AntDesign";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useEvent } from "expo";
@@ -21,7 +22,10 @@ const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
 // Helper function to replace localhost
 const replaceLocalhost = (url: string | undefined) => {
-  return url?.replace("localhost:3000", "192.168.0.102:3000");
+  return url?.replace("localhost:3000", `${LOCALIP}`);
+};
+const replaceVideohost = (url: string | undefined) => {
+  return url?.replace("download", "preview");
 };
 
 // Helper function to determine media type from mimeType or URL
@@ -66,7 +70,6 @@ interface MediaFile {
 interface AuthenticatedMediaViewerProps {
   mediaFile?: MediaFile;
   mediaUrl?: string;
-  token?: string | null;
   mediaType?: "image" | "video";
   style?: any;
 }
@@ -74,7 +77,6 @@ interface AuthenticatedMediaViewerProps {
 const AuthenticatedMediaViewer: React.FC<AuthenticatedMediaViewerProps> = ({
   mediaFile,
   mediaUrl,
-  token,
   mediaType,
   style,
 }) => {
@@ -89,20 +91,16 @@ const AuthenticatedMediaViewer: React.FC<AuthenticatedMediaViewerProps> = ({
     mediaType || determineMediaType(mediaFile?.mimeType, actualMediaUrl);
 
   const processedUrl = replaceLocalhost(actualMediaUrl);
+  const videoUrl = replaceVideohost(processedUrl);
   const isVideo = actualMediaType === "video";
 
   // Check if token is already in URL or needs to be added to headers
-  const urlHasToken = processedUrl?.includes("token=");
 
   // Create video source with headers if needed
   const videoSource =
-    isVideo && processedUrl
+    isVideo && videoUrl
       ? {
-          uri: processedUrl,
-          headers:
-            !urlHasToken && token
-              ? { Authorization: `Bearer ${token}` }
-              : undefined,
+          uri: videoUrl,
         }
       : null;
 
@@ -150,9 +148,6 @@ const AuthenticatedMediaViewer: React.FC<AuthenticatedMediaViewerProps> = ({
       Alert.alert("Lỗi", "Không thể phát video");
     }
   }, [fullVideoStatus]);
-
-  const authHeaders =
-    !urlHasToken && token ? { Authorization: `Bearer ${token}` } : undefined;
 
   const handleMediaPress = () => {
     setModalVisible(true);
@@ -266,7 +261,6 @@ const AuthenticatedMediaViewer: React.FC<AuthenticatedMediaViewerProps> = ({
                 <Image
                   source={{
                     uri: processedUrl,
-                    headers: authHeaders,
                   }}
                   style={styles.thumbnailMedia}
                   onError={handleMediaError}
@@ -374,7 +368,6 @@ const AuthenticatedMediaViewer: React.FC<AuthenticatedMediaViewerProps> = ({
                 <Image
                   source={{
                     uri: processedUrl,
-                    headers: authHeaders,
                   }}
                   style={styles.fullImage}
                   resizeMode="contain"
