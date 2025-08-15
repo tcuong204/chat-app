@@ -154,3 +154,8 @@ export async function fetchProtectedImage(
 
   return res.uri; // có thể dùng cho <Image source={{ uri: res.uri }} />
 }
+export async function getPreviewVideo(fileId: string) {
+  const res = await axiosInstance.get(`/files/preview/` + fileId);
+
+  return res.data; // có thể dùng cho <Image source={{ uri: res.uri }} />
+}

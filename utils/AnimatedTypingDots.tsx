@@ -50,11 +50,14 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
     alignItems: "flex-end",
-    height: 20,
+    height: 40,
+    backgroundColor: "#f2f2f2",
+    padding: 10,
+    borderRadius: 50,
   },
   dot: {
-    width: 8,
-    height: 8,
+    width: 6,
+    height: 6,
     borderRadius: 4,
     backgroundColor: "#666",
     marginHorizontal: 3,

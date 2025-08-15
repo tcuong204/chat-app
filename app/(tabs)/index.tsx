@@ -263,7 +263,6 @@ export default function Index() {
     // Handle pin chat logic
     console.log("Pin chat:", chatId);
   }, []);
-  console.log(tabs);
 
   const handleTabPress = (tabId: string) => {
     setTabs((prevTabs) =>
@@ -473,9 +472,11 @@ export default function Index() {
         avatar: item.avatarUrl || images.defaultAvatar,
         online: item.isOnline,
         isFriend: item.isFriend,
+
         phoneNumber: item.phoneNumber,
         // add more fields if needed
       }}
+      setIsSearchMode={setIsSearchMode}
       onPress={handleSearchContactPress}
       showPhone={false}
       showLastMessage={false}

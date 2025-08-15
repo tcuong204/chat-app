@@ -41,6 +41,7 @@ interface ContactCardProps {
   showLastMessage?: boolean;
   className?: string;
   fetchFriends?: () => void;
+  setIsSearchMode?: (value: boolean) => void;
   addFriend?: (phoneNumber: string) => void;
   onShowFriendOption?: (friendInfo: {
     avatar: string;
@@ -58,6 +59,7 @@ const ContactCard: React.FC<ContactCardProps> = ({
   showLastMessage = false,
   className = "",
   fetchFriends,
+  setIsSearchMode,
   addFriend,
   onShowFriendOption,
 }) => {
@@ -277,6 +279,7 @@ const ContactCard: React.FC<ContactCardProps> = ({
                     showError("Gửi lời mời thất bại!");
                   }
                   setShowFriendModal(false);
+
                   fetchFriends?.(); // Cập nhật danh sách bạn bè
                   setFriendMessage("");
                 }}

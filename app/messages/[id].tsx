@@ -8,12 +8,14 @@ import {
 import { uploadFile } from "@/api/uploadFile";
 import AudioPlayer from "@/components/audioPlayer";
 import { images } from "@/constants/images";
+import { LOCALIP } from "@/constants/localIp";
 import { default as TypingDots } from "@/utils/AnimatedTypingDots";
 import AuthenticatedMediaViewer from "@/utils/authenticatedImage";
 import { showError, showSuccess } from "@/utils/customToast";
 import { openOfficeFile } from "@/utils/openOfficeFile";
 import { getAccount } from "@/utils/secureStore";
 import { socketManager } from "@/utils/socket";
+import { voiceCallService } from "@/utils/voiceCallService";
 import AntDesign from "@expo/vector-icons/AntDesign";
 import Feather from "@expo/vector-icons/Feather";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
@@ -94,7 +96,7 @@ export interface ConversationStatus {
 
 export interface DirectConversation {
   id: string;
-  type: "direct";
+  type: "direct" | "group";
   name: string | null;
   description: string | null;
   avatarUrl: string | null;
@@ -122,6 +124,7 @@ const MessageScreen = () => {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [audioUri, setAudioUri] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [callConnecting, setCallConnecting] = useState(false);
 
   const inputAnim = useRef(new Animated.Value(0)).current;
   const inputRef = useRef<TextInput>(null);
@@ -131,6 +134,59 @@ const MessageScreen = () => {
   const [message, setMessage] = useState("");
   const params = useLocalSearchParams();
   const conversationId = params.id as string;
+  const getPeerUserId = useCallback(() => {
+    if (!conversations || !currentUserId) return null;
+    const peer = conversations.participants.find(
+      (p) => p.userId && p.userId !== currentUserId
+    );
+    return peer?.userId || null;
+  }, [conversations, currentUserId]);
+
+  const ensureVoiceSocketConnected = useCallback(async () => {
+    const account = await getAccount();
+    const token = (account as any)?.accessToken;
+    const uid = (account as any)?.user?.id;
+    if (!token || !uid) throw new Error("Missing auth");
+    if (!voiceCallService.isConnected) {
+      await voiceCallService.connect(`https://${LOCALIP}`, uid, token);
+    }
+  }, []);
+
+  const handleStartVoiceCall = useCallback(async () => {
+    try {
+      const peerUserId = getPeerUserId();
+      if (!peerUserId) return;
+      setCallConnecting(true);
+      await ensureVoiceSocketConnected();
+      await voiceCallService.startCall(peerUserId);
+      router.push({
+        pathname: "/messages/management/[id]",
+        params: { id: String(conversationId), call: "voice" },
+      });
+    } catch (e) {
+      console.log("Start voice call error", e);
+    } finally {
+      setCallConnecting(false);
+    }
+  }, [getPeerUserId, ensureVoiceSocketConnected, conversationId]);
+
+  const handleStartVideoCall = useCallback(async () => {
+    try {
+      const peerUserId = getPeerUserId();
+      if (!peerUserId) return;
+      setCallConnecting(true);
+      await ensureVoiceSocketConnected();
+      await voiceCallService.startVideoCall(peerUserId);
+      router.push({
+        pathname: "/messages/management/[id]",
+        params: { id: String(conversationId), call: "video" },
+      });
+    } catch (e) {
+      console.log("Start video call error", e);
+    } finally {
+      setCallConnecting(false);
+    }
+  }, [getPeerUserId, ensureVoiceSocketConnected, conversationId]);
   // Optimistic UI: Store local messages before server confirmation
   const [localMessages, setLocalMessages] = useState<{
     [key: string]: Message;
@@ -417,22 +473,28 @@ const MessageScreen = () => {
 
   const startRecording = async () => {
     try {
+      console.log("[record] requesting mic permission");
       const { status } = await Audio.requestPermissionsAsync();
       if (status !== "granted") {
         showError("Cần cấp quyền truy cập micro");
+        console.log("[record] permission denied");
         return;
       }
 
+      console.log("[record] setting audio mode");
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
       });
 
+      console.log("[record] preparing recording");
       const recording = new Audio.Recording();
       await recording.prepareToRecordAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY
       );
+      console.log("[record] starting...");
       await recording.startAsync();
+      console.log("[record] started");
       setRecording(recording);
     } catch (error) {
       console.error("Error starting recording:", error);
@@ -444,13 +506,16 @@ const MessageScreen = () => {
     try {
       if (!recording) return;
 
+      console.log("[record] stopping...");
       await recording.stopAndUnloadAsync();
       const uri = recording.getURI();
       setRecording(null);
       console.log("Recording stopped, file URI:", uri);
 
       if (uri) {
+        console.log("[record] uploading file");
         await handleFileUpload(uri, "audio");
+        console.log("[record] upload done");
       }
     } catch (error) {
       console.error("Error stopping recording:", error);
@@ -467,6 +532,7 @@ const MessageScreen = () => {
       setUploading(true);
 
       const response = await uploadFile(uri);
+      console.log("[upload] response:", response);
 
       // Prepare message data based on file type
       const messageData = {
@@ -676,6 +742,9 @@ const MessageScreen = () => {
     socketManager.connect().then(() => {
       socketManager.joinConversation(conversationId);
       socketManager.onMessage(handleNewMessage);
+      // Immediately request last messages and typing users after socket connect
+      socketManager.requestLastMessages([conversationId]);
+      socketManager.getTypingUsers(conversationId);
     });
 
     const handleTypingUsers = (data: {
@@ -1018,6 +1087,8 @@ const MessageScreen = () => {
     socketManager.onTyping(handleTyping);
     socketManager.onStatusUpdate(handleStatusUpdate);
     socketManager.getSocket()?.on("batch_read_receipts", handleReadReceipts);
+    // Some servers may emit read_receipts_batch
+    socketManager.getSocket()?.on("read_receipts_batch", handleReadReceipts);
     socketManager.getSocket()?.on("message.read", handleSingleMessageRead);
 
     socketManager.onFileEvent((data) => {
@@ -1063,16 +1134,13 @@ const MessageScreen = () => {
     };
     getCurrentUser();
 
-    // Request last message from server
-    if (socketManager.isSocketConnected()) {
-      socketManager.requestLastMessages([conversationId]);
-      socketManager.getTypingUsers(conversationId);
-    }
+    // Request moved to connect() above to avoid race conditions
 
     // Cleanup
     return () => {
       socketManager.offFileEvent(handleFileShared);
       socketManager.getSocket()?.off("batch_read_receipts", handleReadReceipts);
+      socketManager.getSocket()?.off("read_receipts_batch", handleReadReceipts);
       socketManager.getSocket()?.off("message.read", handleSingleMessageRead);
       socketManager.getSocket()?.off("quick_file_shared", handleFileShared);
       socketManager
@@ -1254,10 +1322,15 @@ const MessageScreen = () => {
     const isOwnMessage = currentUserId
       ? item.senderId === currentUserId
       : false;
+    const isGroupConversation = conversations?.type === "group";
     const readStatus = getMessageReadStatus(item.id, item.senderId);
     const isLastFromSender = isLastMessageFromSender(index, messages);
     const shouldShowReadStatus =
       isOwnMessage && isLastFromSender && readStatus?.isRead;
+    const isFirstInSenderSequence =
+      !previousMessage || previousMessage.senderId !== item.senderId;
+    const shouldShowSenderName =
+      isGroupConversation && !isOwnMessage && isFirstInSenderSequence;
 
     // Xử lý thời gian
     const shouldShowTimestamp = (() => {
@@ -1420,7 +1493,8 @@ const MessageScreen = () => {
                 {renderMessageContent()}
               </View>
             </LinearGradient>
-          ) : (
+          ) : !messages[index + 1] ||
+            messages[index + 1].senderId !== item.senderId ? (
             <View className="flex flex-row items-end">
               <Image
                 source={
@@ -1432,12 +1506,41 @@ const MessageScreen = () => {
                 resizeMode="cover"
                 style={{ width: 30, height: 30 }}
               />
-              <View
-                className={`${
-                  hasAttachments ? "" : "px-4 py-3"
-                } max-w-xs rounded-2xl bg-gray-100 rounded-bl-md `}
-              >
-                {renderMessageContent()}
+              <View>
+                {shouldShowSenderName && (
+                  <Text className="text-xs text-gray-500 mb-1 ml-1">
+                    {item.sender?.fullName ||
+                      item.sender?.username ||
+                      "Người dùng"}
+                  </Text>
+                )}
+                <View
+                  className={`${
+                    hasAttachments ? "" : "px-4 py-3"
+                  } max-w-xs rounded-2xl bg-gray-100 rounded-bl-md `}
+                >
+                  {renderMessageContent()}
+                </View>
+              </View>
+            </View>
+          ) : (
+            <View className="flex flex-row items-end">
+              <View className="w-8 h-8" style={{ marginRight: 10 }}></View>
+              <View>
+                {shouldShowSenderName && (
+                  <Text className="text-xs text-gray-500 mb-1 ml-1">
+                    {item.sender?.fullName ||
+                      item.sender?.username ||
+                      "Người dùng"}
+                  </Text>
+                )}
+                <View
+                  className={`${
+                    hasAttachments ? "" : "px-4 py-3"
+                  } max-w-xs rounded-2xl bg-gray-100 rounded-bl-md  `}
+                >
+                  {renderMessageContent()}
+                </View>
               </View>
             </View>
           )}
@@ -1562,11 +1665,18 @@ const MessageScreen = () => {
               </View>
 
               <View className="flex flex-row space-x-2">
-                {/* Debug button */}
-                <TouchableOpacity className="p-2 bg-white/20 rounded-full">
+                <TouchableOpacity
+                  className="p-2 bg-white/20 rounded-full"
+                  onPress={handleStartVoiceCall}
+                  disabled={callConnecting}
+                >
                   <FontAwesome name="phone" size={24} color="#a855f7" />
                 </TouchableOpacity>
-                <TouchableOpacity className="p-2 bg-white/20 rounded-full">
+                <TouchableOpacity
+                  className="p-2 bg-white/20 rounded-full"
+                  onPress={handleStartVideoCall}
+                  disabled={callConnecting}
+                >
                   <FontAwesome6 name="video" size={24} color="#a855f7" />
                 </TouchableOpacity>
               </View>
@@ -1578,7 +1688,17 @@ const MessageScreen = () => {
             data={getMessagesWithTyping()} // Thay vì messages
             renderItem={({ item, index }) => {
               if ((item as any).kind === "typing") {
-                return <TypingDots />;
+                return (
+                  <View className="flex flex-row">
+                    <Image
+                      source={images.defaultAvatar}
+                      className="w-14 h-14 rounded-full mr-2"
+                      resizeMode="cover"
+                      style={{ width: 30, height: 30 }}
+                    />
+                    <TypingDots />
+                  </View>
+                );
               }
               return renderMessage({ item: item as Message, index });
             }}
@@ -1623,7 +1743,7 @@ const MessageScreen = () => {
             showsVerticalScrollIndicator={false}
           />
           {/* Input */}
-          <View className="bg-white px-2 pt-3 border-t border-gray-200">
+          <View className="bg-white px-2 py-3 border-t border-gray-200">
             <View className="flex flex-row items-center space-x-3">
               <View className="flex-row items-center px-4 bg-white">
                 {!inputFocused ? (

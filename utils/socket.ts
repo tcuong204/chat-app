@@ -286,7 +286,7 @@ class SocketManager {
             }
 
             // Create socket connection
-            this.socket = io(`http://${LOCALIP}/chat`, {
+            this.socket = io(`https://${LOCALIP}/chat`, {
               //http://192.168.1.11:3000
               auth: {
                 token: accessToken,
@@ -372,6 +372,7 @@ class SocketManager {
     this.socket.off("offline_messages_batch");
 
     this.socket.off("batch_read_receipts");
+    this.socket.off("read_receipts_batch");
     this.socket.off("message.read");
     // Typing events
     this.socket.off("typing_started");
@@ -482,6 +483,15 @@ class SocketManager {
 
     this.socket.on("batch_read_receipts", (data) => {
       console.log("📖 Batch read receipts received:", data);
+      this.notifyStatusListeners({
+        type: "batch_read_receipts",
+        ...data,
+      });
+    });
+
+    // Alternate server event name support
+    this.socket.on("read_receipts_batch", (data) => {
+      console.log("📖 Read receipts batch (alt) received:", data);
       this.notifyStatusListeners({
         type: "batch_read_receipts",
         ...data,
@@ -609,6 +619,15 @@ class SocketManager {
       console.log("📨 Conversations last messages response:", data);
       this.notifyConversationListeners({
         type: "last_messages_response",
+        ...data,
+      });
+    });
+
+    // In case backend emits singular update per conversation as a general event
+    this.socket.on("conversation_last_message_update", (data) => {
+      console.log("📨 Conversation last message update (single):", data);
+      this.notifyConversationListeners({
+        type: "last_message_update",
         ...data,
       });
     });

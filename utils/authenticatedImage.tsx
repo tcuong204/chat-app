@@ -93,6 +93,7 @@ const AuthenticatedMediaViewer: React.FC<AuthenticatedMediaViewerProps> = ({
   const processedUrl = replaceLocalhost(actualMediaUrl);
   const videoUrl = replaceVideohost(processedUrl);
   const isVideo = actualMediaType === "video";
+  console.log(videoUrl);
 
   // Check if token is already in URL or needs to be added to headers
 
@@ -132,6 +133,54 @@ const AuthenticatedMediaViewer: React.FC<AuthenticatedMediaViewerProps> = ({
     }
   );
 
+  // Probe response headers to ensure proper Content-Type and range support
+  useEffect(() => {
+    const run = async () => {
+      try {
+        if (!isVideo || !videoUrl) return;
+        const res = await fetch(videoUrl, { method: "HEAD" });
+        console.log("[expo-video] HEAD status:", res.status);
+        console.log(
+          "[expo-video] content-type:",
+          res.headers.get("content-type")
+        );
+        console.log(
+          "[expo-video] accept-ranges:",
+          res.headers.get("accept-ranges")
+        );
+        console.log(
+          "[expo-video] content-length:",
+          res.headers.get("content-length")
+        );
+
+        // Optional: tiny range request to verify partial content support
+        try {
+          const r = await fetch(videoUrl, {
+            method: "GET",
+            headers: { Range: "bytes=0-1" },
+          });
+          console.log("[expo-video] range GET status:", r.status);
+          if (r.status === 206) {
+            setFullMediaLoading(false);
+          }
+          console.log(
+            "[expo-video] content-range:",
+            r.headers.get("content-range")
+          );
+          console.log(
+            "[expo-video] accept-ranges (GET):",
+            r.headers.get("accept-ranges")
+          );
+        } catch (e) {
+          console.log("[expo-video] range GET failed:", e);
+        }
+      } catch (err) {
+        console.log("[expo-video] HEAD failed:", err);
+      }
+    };
+    run();
+  }, [isVideo, videoUrl]);
+
   // Handle video loading states
   useEffect(() => {
     if (fullVideoStatus === "loading") {
@@ -147,11 +196,20 @@ const AuthenticatedMediaViewer: React.FC<AuthenticatedMediaViewerProps> = ({
       setMediaError(true);
       Alert.alert("Lỗi", "Không thể phát video");
     }
+
+    // Auto play when ready (helps when nativeControls don't trigger automatically)
+    if (fullVideoStatus === "readyToPlay" && !isFullVideoPlaying) {
+      try {
+        fullVideoPlayer.play();
+      } catch (e) {
+        console.log("[expo-video] autoplay failed:", e);
+      }
+    }
   }, [fullVideoStatus]);
 
   const handleMediaPress = () => {
+    console.log("Video URL (on open):", videoUrl);
     setModalVisible(true);
-    setFullMediaLoading(true);
     if (isVideo) {
       // Reset full video player when opening modal
       fullVideoPlayer.currentTime = 0;

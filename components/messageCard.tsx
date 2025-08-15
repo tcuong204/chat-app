@@ -175,7 +175,7 @@ const MessageCard: React.FC<MessageCardProps> = ({
             className="w-14 h-14 rounded-full"
             resizeMode="cover"
             onError={() => setImageError(true)}
-            style={{ width: 56, height: 56 }}
+            style={{ width: 50, height: 50 }}
           />
           {chat.online && (
             <View className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-white"></View>
@@ -189,7 +189,7 @@ const MessageCard: React.FC<MessageCardProps> = ({
 
         <View className="flex-1 ml-6">
           <View className="flex flex-row items-center justify-between">
-            <View className="flex mt-1">
+            <View className="flex ">
               <Text className="font-semibold text-gray-800 text-base font-manrope">
                 {chat.name}
               </Text>
@@ -198,14 +198,13 @@ const MessageCard: React.FC<MessageCardProps> = ({
                   className="text-blue-500 text-sm italic font-roboto"
                   style={{ color: "#3b82f6" }}
                 >
-                  {chat.lastMessage}
+                  {chat.lastMessage || ""}
                 </Text>
               ) : (
                 <Text
                   className="text-gray-600 text-sm font-nunito"
                   numberOfLines={1}
                 >
-                  {chat.hasVoice ? "🎵 " : ""}
                   {chat.lastMessage || ""}
                 </Text>
               )}

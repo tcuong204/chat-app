@@ -9,14 +9,36 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Need camera for video call",
+        "NSMicrophoneUsageDescription": "Need microphone for voice call",
+        "SKAdNetworkItems": [
+          {
+            "SKAdNetworkIdentifier": "v9wttpbfk9.skadnetwork"
+          },
+          {
+            "SKAdNetworkIdentifier": "n38lu8286q.skadnetwork"
+          }
+        ]
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "usesCleartextTraffic": true,
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS",
+        "android.permission.INTERNET",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ],
+      "package": "com.anonymous.chatapp"
     },
     "web": {
       "bundler": "metro",
@@ -59,6 +81,12 @@
     "experiments": {
       "typedRoutes": true
     },
-    "assetBundlePatterns": ["assets/fonts/*"]
+    "assetBundlePatterns": ["assets/fonts/*"],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "af864ae9-1757-4960-b706-f53b24baa965"
+      }
+    }
   }
 }

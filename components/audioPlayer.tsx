@@ -1,6 +1,8 @@
 import { LOCALIP } from "@/constants/localIp";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { AudioSource, useAudioPlayer } from "expo-audio";
+import { Audio as AVAudio } from "expo-av";
+import * as FileSystem from "expo-file-system";
 import React, { useCallback, useEffect, useState } from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
@@ -28,13 +30,77 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
   };
   const refactUrl = replaceVideohost(audioUrl);
   // Create audio source
-  console.log(refactUrl);
+  console.log("[audio] url:", refactUrl);
+  const [effectiveUri, setEffectiveUri] = useState<string | null>(
+    refactUrl || null
+  );
 
-  const audioSource: AudioSource = { uri: refactUrl };
+  // Probe server headers to diagnose playback issues
+  useEffect(() => {
+    const probe = async () => {
+      try {
+        if (!refactUrl) return;
+        const head = await fetch(refactUrl, { method: "HEAD" });
+        console.log("[audio] HEAD status:", head.status);
+        console.log("[audio] content-type:", head.headers.get("content-type"));
+        console.log(
+          "[audio] accept-ranges:",
+          head.headers.get("accept-ranges")
+        );
+        console.log(
+          "[audio] content-length:",
+          head.headers.get("content-length")
+        );
+        try {
+          const r = await fetch(refactUrl, {
+            method: "GET",
+            headers: { Range: "bytes=0-1" },
+          });
+          console.log("[audio] range GET status:", r.status);
+          console.log("[audio] content-range:", r.headers.get("content-range"));
+          const acceptRanges = head.headers.get("accept-ranges");
+          if (acceptRanges !== "bytes" || r.status !== 206) {
+            console.log(
+              "[audio] byte-range not supported → downloading to cache"
+            );
+            try {
+              const unique = Math.random().toString(36).substr(2, 6);
+              const localName = (fileName || "audio") + "_" + unique + ".m4a";
+              const dest = (FileSystem.cacheDirectory || "") + localName;
+              const dl = await FileSystem.downloadAsync(refactUrl, dest);
+              console.log("[audio] downloaded:", dl.uri);
+              setEffectiveUri(dl.uri);
+            } catch (e) {
+              console.log("[audio] download fallback failed:", e);
+            }
+          } else {
+            setEffectiveUri(refactUrl);
+          }
+        } catch (e) {
+          console.log("[audio] range GET failed:", e);
+        }
+      } catch (err) {
+        console.log("[audio] HEAD failed:", err);
+      }
+    };
+    probe();
+  }, [refactUrl]);
+
+  const audioSource: AudioSource = { uri: effectiveUri || "" };
+
+  // Cleanup local file if created
+  useEffect(() => {
+    const uri = effectiveUri;
+    return () => {
+      if (uri && uri.startsWith(FileSystem.cacheDirectory || "file://")) {
+        FileSystem.deleteAsync(uri).catch(() => {});
+      }
+    };
+  }, [effectiveUri]);
 
   // Use expo-audio hook (second arg is initial volume)
   const player = useAudioPlayer(audioSource, 1.0);
-  console.log(player);
+  console.log("[audio] player instance:", player);
 
   // Debug logs
   // Listen to player events
@@ -79,6 +145,16 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
         console.log("🎵 Pausing audio");
         player.pause();
       } else {
+        // Ensure playback mode routes to speaker and ignores iOS silent switch
+        try {
+          await AVAudio.setAudioModeAsync({
+            allowsRecordingIOS: false,
+            playsInSilentModeIOS: true,
+            playThroughEarpieceAndroid: false,
+          } as any);
+        } catch (e) {
+          console.log("🎵 setAudioModeAsync failed:", e);
+        }
         console.log("🎵 Playing audio");
         player.play();
       }

@@ -7,9 +7,11 @@ import { Friend } from "@/app/(tabs)/contact";
 import { CreateGroupModal } from "@/components";
 import { images } from "@/constants/images";
 import { showSuccess } from "@/utils/customToast";
+import { voiceCallService } from "@/utils/voiceCallService";
 import AntDesign from "@expo/vector-icons/AntDesign";
+import Feather from "@expo/vector-icons/Feather";
 import { router, Stack, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Image,
@@ -29,6 +31,7 @@ const MessageManagement = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [showNewMessageModal, setShowNewMessageModal] = useState(false);
   const [contactsData, setContactsData] = useState<Friend[]>([]);
+  const [callState, setCallState] = useState(voiceCallService.getCallState());
   const handleCloseModal = useCallback(() => {
     setShowNewMessageModal(false);
     setSearchQuery("");
@@ -81,7 +84,27 @@ const MessageManagement = () => {
   useEffect(() => {
     getConversations();
     fetchFriends();
+    voiceCallService.onCallStateChanged = (state) => setCallState(state);
+    return () => {
+      voiceCallService.onCallStateChanged = null;
+    };
   }, []);
+  const statusText = useMemo(() => {
+    switch (callState.state) {
+      case "initiating":
+        return "Đang kết nối...";
+      case "ringing":
+        return "Đang đổ chuông...";
+      case "connecting":
+        return "Đang kết nối...";
+      case "active":
+        return "Đang gọi";
+      case "ended":
+        return "Đã kết thúc";
+      default:
+        return "";
+    }
+  }, [callState.state]);
   return (
     <SafeAreaView className="flex-1 bg-gray-50">
       <Stack.Screen options={{ headerShown: false }} />
@@ -110,10 +133,13 @@ const MessageManagement = () => {
             </View>
           </View>
         </View>
-        <View className="flex justify-center flex-row">
+        <View className="flex justify-center items-center mt-2">
           <Text className="text-xl font-bold font-manrope">
             {conversations?.name}
           </Text>
+          {callState.callId && (
+            <Text className="text-sm text-gray-500 mt-1">{statusText}</Text>
+          )}
         </View>
         <TouchableOpacity
           className=" bg-white rounded-full flex flex-row items-center justify-between p-4 mt-4"
@@ -164,6 +190,42 @@ const MessageManagement = () => {
           </View>
           <AntDesign name="right" size={20} color="black" />
         </TouchableOpacity>
+        {callState.callId && (
+          <View className="mt-6 px-6">
+            <View className="bg-white rounded-2xl p-4 items-center">
+              <Text className="text-base font-semibold mb-4">
+                Điều khiển cuộc gọi
+              </Text>
+              <View className="flex-row items-center space-x-6">
+                <TouchableOpacity
+                  onPress={() => voiceCallService.toggleMute()}
+                  className="w-14 h-14 rounded-full bg-gray-100 items-center justify-center"
+                >
+                  <Feather
+                    name={callState.isMuted ? "mic-off" : "mic"}
+                    size={22}
+                    color="#111"
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => voiceCallService.toggleSpeaker()}
+                  className="w-14 h-14 rounded-full bg-gray-100 items-center justify-center"
+                >
+                  <Feather name="volume-2" size={22} color="#111" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => {
+                    voiceCallService.hangupCall();
+                    router.back();
+                  }}
+                  className="w-14 h-14 rounded-full bg-red-600 items-center justify-center"
+                >
+                  <AntDesign name="phone" size={22} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
         <TouchableOpacity
           className=" bg-white rounded-full flex flex-row items-center justify-between p-4 mt-4"
           onPress={() => {}}

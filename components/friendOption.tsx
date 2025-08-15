@@ -55,13 +55,13 @@ const FriendOption: React.FC<FriendOption> = ({
   const { hideTabBar, showTabBar } = useTabBar();
   const handleDeleteFriend = async () => {
     // Xử lý hủy kết bạn
-    Alert.alert("Xóa bạn bè", "Bạn có chắc chắn muốn xóa bạn bè này?", [
+    Alert.alert("Hủy kết bạn", "Bạn có chắc chắn muốn xóa bạn bè này?", [
       {
         text: "Hủy",
         style: "cancel",
       },
       {
-        text: "Đăng xuất",
+        text: "Xác nhận",
         style: "destructive",
         onPress: async () => {
           try {
