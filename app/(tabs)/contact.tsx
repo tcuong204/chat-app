@@ -1,18 +1,12 @@
 import FriendOption from "@/components/friendOption";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Animated,
-  FlatList,
-  SafeAreaView,
-  ScrollView,
-  Text,
-  View,
-} from "react-native";
+import { Animated, FlatList, ScrollView, Text, View } from "react-native";
 import {
   GestureHandlerRootView,
   RefreshControl,
 } from "react-native-gesture-handler";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { getFriendRequests, getFriends } from "../../api/friendApi";
 import { ContactCard, Header, Search } from "../../components";
 
@@ -196,60 +190,62 @@ const ContactScreen = () => {
   }, []);
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaView className="flex-1 bg-gray-50">
-        {/* Header */}
-        <Header
-          subtitle=""
-          title="Danh bạ"
-          // showAddButton={true}
-          onAddPress={() => console.log("Add contact")}
-          totalFriendRequest={newRequest}
-          showFriendRequest={true}
-        />
-
-        {/* Search Input */}
-        <View className="bg-white px-6 py-4">
-          <Search
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder="Tìm bạn bè..."
-            onClear={() => setSearchQuery("")}
+      <SafeAreaProvider>
+        <SafeAreaView className="flex-1 bg-gray-50">
+          {/* Header */}
+          <Header
+            subtitle=""
+            title="Danh bạ"
+            // showAddButton={true}
+            onAddPress={() => console.log("Add contact")}
+            totalFriendRequest={newRequest}
+            showFriendRequest={true}
           />
-        </View>
 
-        {/* Content */}
-        <ScrollView
-          className="flex-1"
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
-        >
-          {loading ? (
-            <View className="flex-1 items-center justify-center mt-10">
-              <Text>Đang tải danh bạ...</Text>
-            </View>
-          ) : searchQuery.length === 0 ? (
-            // Show alphabet sections when no search
-            renderAlphabetSection()
-          ) : (
-            // Show filtered results
-            <View className="bg-white mt-4">
-              <FlatList
-                data={filteredContacts}
-                renderItem={renderContactItem}
-                keyExtractor={(item) => String(item.user.id)}
-                scrollEnabled={false}
-              />
-            </View>
-          )}
-        </ScrollView>
-        <FriendOption
-          show={showOptionModal}
-          setShow={setShowOptionModal}
-          friendInfo={selectedFriend}
-          fetchFriends={fetchFriends}
-        />
-      </SafeAreaView>
+          {/* Search Input */}
+          <View className="bg-white px-6 py-4">
+            <Search
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Tìm bạn bè..."
+              onClear={() => setSearchQuery("")}
+            />
+          </View>
+
+          {/* Content */}
+          <ScrollView
+            className="flex-1"
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
+          >
+            {loading ? (
+              <View className="flex-1 items-center justify-center mt-10">
+                <Text>Đang tải danh bạ...</Text>
+              </View>
+            ) : searchQuery.length === 0 ? (
+              // Show alphabet sections when no search
+              renderAlphabetSection()
+            ) : (
+              // Show filtered results
+              <View className="bg-white mt-4">
+                <FlatList
+                  data={filteredContacts}
+                  renderItem={renderContactItem}
+                  keyExtractor={(item) => String(item.user.id)}
+                  scrollEnabled={false}
+                />
+              </View>
+            )}
+          </ScrollView>
+          <FriendOption
+            show={showOptionModal}
+            setShow={setShowOptionModal}
+            friendInfo={selectedFriend}
+            fetchFriends={fetchFriends}
+          />
+        </SafeAreaView>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 };

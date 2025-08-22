@@ -13,6 +13,7 @@ interface MessageCardProps {
     online?: boolean;
     pinned?: boolean;
     typing?: boolean;
+    type?: string;
     hasVoice?: boolean;
     isRead?: boolean;
     unreadCount?: number;

@@ -1,3 +1,5 @@
+import { LOCALIP } from "@/constants/localIp";
+import { voiceCallService } from "@/utils/voiceCallService";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { useFonts } from "expo-font";
 import { router, Stack } from "expo-router";
@@ -48,6 +50,128 @@ export default function RootLayout() {
     return () => clearInterval(interval);
   }, []);
 
+  // Handle incoming call -> navigate to call UI with accept/decline
+  useEffect(() => {
+    // Only set up if not already set up
+    if (voiceCallService.isConnected) {
+      console.log("Voice call service already connected, skipping setup");
+      return;
+    }
+
+    console.log("Setting up incoming call handler...");
+
+    const MAX_RETRIES = 3;
+    const getRetryDelay = (retry: number) =>
+      Math.min(1000 * Math.pow(2, retry), 10000);
+
+    async function setupVoiceCall(retryCount = 0) {
+      try {
+        // Get account for authentication
+        const account = await getAccount();
+        if (!account) {
+          console.log("No account found, skipping voice call setup");
+          return;
+        }
+
+        // Check WebRTC status
+        const webrtcStatus = voiceCallService.getWebRTCStatus();
+        console.log("WebRTC Status:", webrtcStatus);
+
+        // Connect to voice call service with auth token
+        try {
+          // Only connect if not already connected
+          if (!voiceCallService.isConnected) {
+            // Clean up any existing handlers before connecting
+            voiceCallService.onDisconnect = null;
+            voiceCallService.onIncomingCall = null;
+
+            await voiceCallService.connect(
+              `https://${LOCALIP}`,
+              (account as any).userId,
+              (account as any).accessToken
+            );
+          }
+          console.log("Voice call service connected");
+        } catch (error) {
+          if (retryCount < MAX_RETRIES) {
+            const delay = getRetryDelay(retryCount);
+            console.log(
+              `Retrying connection in ${delay}ms... (Attempt ${
+                retryCount + 1
+              }/${MAX_RETRIES})`
+            );
+            setTimeout(() => {
+              setupVoiceCall(retryCount + 1);
+            }, delay);
+            return;
+          } else {
+            console.error(
+              "Max retry attempts reached. Voice call service failed to connect."
+            );
+          }
+        }
+
+        // Set up disconnect handler
+        voiceCallService.onDisconnect = () => {
+          if (retryCount < MAX_RETRIES) {
+            const delay = getRetryDelay(retryCount);
+            console.log(
+              `Server disconnected. Retrying in ${delay}ms... (Attempt ${
+                retryCount + 1
+              }/${MAX_RETRIES})`
+            );
+            setTimeout(() => {
+              setupVoiceCall(retryCount + 1);
+            }, delay);
+          } else {
+            console.error("Max retry attempts reached after disconnect.");
+          }
+        };
+        let lastCallTime = 0;
+        // Set up incoming call handler
+        const prevIncoming = voiceCallService.onIncomingCall;
+        voiceCallService.onIncomingCall = (data: {
+          callId: string;
+          callerId: string;
+          callerName?: string;
+          callType: "voice" | "video";
+        }) => {
+          const now = Date.now();
+
+          // Nếu lần gọi mới cách lần trước < 2 giây thì bỏ qua
+          if (now - lastCallTime < 2000) {
+            console.log("Bỏ qua incoming call duplicate:", data);
+            return;
+          }
+          lastCallTime = now;
+          console.log("Incoming call received:", data);
+          setTimeout(() => {
+            router.push({
+              pathname: "/voice-call",
+              params: {
+                targetUserId: data.callerId,
+                targetUserName: data.callerName || "Cuộc gọi đến",
+                isIncoming: "true",
+                callType: data.callType, // Thêm loại cuộc gọi vào params
+              },
+            });
+          }, 1000); // delay 300ms để tránh double push
+        };
+
+        return () => {
+          if (voiceCallService.isConnected) {
+            voiceCallService.disconnect();
+            voiceCallService.onDisconnect = null;
+            voiceCallService.onIncomingCall = null;
+          }
+        };
+      } catch (error) {
+        console.error("Error setting up voice call:", error);
+      }
+    }
+
+    setupVoiceCall();
+  }, []);
   if (!fontsLoaded) {
     return (
       <GestureHandlerRootView className="flex-1 items-center justify-center bg-white">

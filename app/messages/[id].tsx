@@ -27,17 +27,18 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   FlatList,
   Image,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 export interface ConversationParticipant {
   userId?: string;
   role: "admin" | "member";
@@ -142,6 +143,15 @@ const MessageScreen = () => {
     return peer?.userId || null;
   }, [conversations, currentUserId]);
 
+  const getPeerUserName = useCallback(() => {
+    if (!conversations || !currentUserId) return null;
+    const peer = conversations.participants.find(
+      (p) => p.userId && p.userId !== currentUserId
+    );
+    // Try to get name from conversation or use a default
+    return conversations.name || "Người dùng";
+  }, [conversations, currentUserId]);
+
   const ensureVoiceSocketConnected = useCallback(async () => {
     const account = await getAccount();
     const token = (account as any)?.accessToken;
@@ -158,35 +168,86 @@ const MessageScreen = () => {
       if (!peerUserId) return;
       setCallConnecting(true);
       await ensureVoiceSocketConnected();
-      await voiceCallService.startCall(peerUserId);
+
+      // Navigate to voice call interface
       router.push({
-        pathname: "/messages/management/[id]",
-        params: { id: String(conversationId), call: "voice" },
+        pathname: "/voice-call",
+        params: {
+          targetUserId: peerUserId,
+          targetUserName: getPeerUserName() || "Người dùng",
+          isIncoming: "false",
+        },
       });
     } catch (e) {
       console.log("Start voice call error", e);
     } finally {
       setCallConnecting(false);
     }
-  }, [getPeerUserId, ensureVoiceSocketConnected, conversationId]);
+  }, [
+    getPeerUserId,
+    ensureVoiceSocketConnected,
+    conversationId,
+    getPeerUserName,
+  ]);
 
   const handleStartVideoCall = useCallback(async () => {
     try {
       const peerUserId = getPeerUserId();
-      if (!peerUserId) return;
+      if (!peerUserId) {
+        console.error("No peer user found for video call");
+        Alert.alert("Error", "Could not find user to call");
+        return;
+      }
+
       setCallConnecting(true);
+      console.log("Starting video call with peer:", peerUserId);
+
+      // Ensure voice socket is connected first
       await ensureVoiceSocketConnected();
-      await voiceCallService.startVideoCall(peerUserId);
+
+      // Check WebRTC status
+      const webrtcStatus = voiceCallService.getWebRTCStatus();
+      console.log("WebRTC Status before call:", webrtcStatus);
+
+      // Request permissions first
+      const permissions = await voiceCallService.checkCameraPermissions();
+      if (
+        permissions.camera !== "granted" ||
+        permissions.microphone !== "granted"
+      ) {
+        const granted = await voiceCallService.requestMediaPermissions(true);
+        if (!granted) {
+          Alert.alert(
+            "Error",
+            "Camera and microphone permissions are required for video calls"
+          );
+          return;
+        }
+      }
+
+      // Navigate to call screen first
+      const peerName = getPeerUserName();
       router.push({
-        pathname: "/messages/management/[id]",
-        params: { id: String(conversationId), call: "video" },
+        pathname: "/voice-call",
+        params: {
+          targetUserId: peerUserId,
+          targetUserName: peerName || "Người dùng",
+          isIncoming: "false",
+          callType: "video", // Add flag to indicate video call
+        },
       });
-    } catch (e) {
-      console.log("Start video call error", e);
+    } catch (error) {
+      console.error("Video call error:", error);
+      Alert.alert("Error", "Could not start video call. Please try again.");
     } finally {
       setCallConnecting(false);
     }
-  }, [getPeerUserId, ensureVoiceSocketConnected, conversationId]);
+  }, [
+    getPeerUserId,
+    ensureVoiceSocketConnected,
+    conversationId,
+    getPeerUserName,
+  ]);
   // Optimistic UI: Store local messages before server confirmation
   const [localMessages, setLocalMessages] = useState<{
     [key: string]: Message;
@@ -1603,240 +1664,242 @@ const MessageScreen = () => {
     );
   };
   return (
-    <SafeAreaView className="flex-1 bg-white">
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        className="flex-1"
-      >
-        <View className="flex-1 bg-gray-50">
-          <Stack.Screen options={{ headerShown: false }} />
+    <SafeAreaProvider>
+      <SafeAreaView className="flex-1 bg-white">
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          className="flex-1"
+        >
+          <View className="flex-1 bg-gray-50">
+            <Stack.Screen options={{ headerShown: false }} />
 
-          {/* Header */}
-          <View className="bg-transparent px-6 py-4">
-            <View className="flex flex-row justify-between items-center">
-              <View className="flex flex-row items-center">
-                <TouchableOpacity
-                  onPress={() => router.back()}
-                  className="mr-4"
-                >
-                  <AntDesign
-                    name="arrowleft"
-                    size={24}
-                    color="#a855f7"
-                    className="p-4"
-                  />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  className="flex flex-row"
-                  onPress={() =>
-                    conversations &&
-                    router.push({
-                      pathname: "/messages/management/[id]",
-                      params: { id: String(conversations.id) },
-                    })
-                  }
-                >
-                  <Image
-                    source={
-                      typeof conversations?.avatarUrl === "string"
-                        ? { uri: conversations.avatarUrl }
-                        : images.defaultAvatar
+            {/* Header */}
+            <View className="bg-transparent px-6 py-4">
+              <View className="flex flex-row justify-between items-center">
+                <View className="flex flex-row items-center">
+                  <TouchableOpacity
+                    onPress={() => router.back()}
+                    className="mr-4"
+                  >
+                    <AntDesign
+                      name="arrowleft"
+                      size={24}
+                      color="#a855f7"
+                      className="p-4"
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    className="flex flex-row"
+                    onPress={() =>
+                      conversations &&
+                      router.push({
+                        pathname: "/messages/management/[id]",
+                        params: { id: String(conversations.id) },
+                      })
                     }
-                    className="w-10 h-10 rounded-full mr-3"
-                  />
-                  <View>
-                    <View className="flex-row items-center">
-                      <Text className="font-bold font-manrope">
-                        {conversations?.name}
-                      </Text>
-                      {unreadCount > 0 && (
-                        <Text className="ml-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full">
-                          {unreadCount}
+                  >
+                    <Image
+                      source={
+                        typeof conversations?.avatarUrl === "string"
+                          ? { uri: conversations.avatarUrl }
+                          : images.defaultAvatar
+                      }
+                      className="w-10 h-10 rounded-full mr-3"
+                    />
+                    <View>
+                      <View className="flex-row items-center">
+                        <Text className="font-bold font-manrope">
+                          {conversations?.name}
                         </Text>
-                      )}
+                        {unreadCount > 0 && (
+                          <Text className="ml-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full">
+                            {unreadCount}
+                          </Text>
+                        )}
+                      </View>
+                      <Text className="text-sm font-nunito">
+                        {socketManager.isSocketConnected()
+                          ? "🟢 Online (Real-time)"
+                          : "🔴 Offline (API only)"}
+                      </Text>
                     </View>
-                    <Text className="text-sm font-nunito">
-                      {socketManager.isSocketConnected()
-                        ? "🟢 Online (Real-time)"
-                        : "🔴 Offline (API only)"}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              </View>
+                  </TouchableOpacity>
+                </View>
 
-              <View className="flex flex-row space-x-2">
-                <TouchableOpacity
-                  className="p-2 bg-white/20 rounded-full"
-                  onPress={handleStartVoiceCall}
-                  disabled={callConnecting}
-                >
-                  <FontAwesome name="phone" size={24} color="#a855f7" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  className="p-2 bg-white/20 rounded-full"
-                  onPress={handleStartVideoCall}
-                  disabled={callConnecting}
-                >
-                  <FontAwesome6 name="video" size={24} color="#a855f7" />
-                </TouchableOpacity>
+                <View className="flex flex-row space-x-2">
+                  <TouchableOpacity
+                    className="p-2 bg-white/20 rounded-full"
+                    onPress={handleStartVoiceCall}
+                    disabled={callConnecting}
+                  >
+                    <FontAwesome name="phone" size={24} color="#a855f7" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    className="p-2 bg-white/20 rounded-full"
+                    onPress={handleStartVideoCall}
+                    disabled={callConnecting}
+                  >
+                    <FontAwesome6 name="video" size={24} color="#a855f7" />
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
-          </View>
 
-          {/* Messages */}
-          <FlatList
-            data={getMessagesWithTyping()} // Thay vì messages
-            renderItem={({ item, index }) => {
-              if ((item as any).kind === "typing") {
-                return (
-                  <View className="flex flex-row">
-                    <Image
-                      source={images.defaultAvatar}
-                      className="w-14 h-14 rounded-full mr-2"
-                      resizeMode="cover"
-                      style={{ width: 30, height: 30 }}
-                    />
-                    <TypingDots />
-                  </View>
-                );
-              }
-              return renderMessage({ item: item as Message, index });
-            }}
-            keyExtractor={(item) => item.id}
-            className="flex-1 p-4 bg-white"
-            contentContainerStyle={{ paddingBottom: 16 }}
-            keyboardShouldPersistTaps="handled"
-            ref={flatListRef}
-            onContentSizeChange={() =>
-              flatListRef.current?.scrollToEnd({ animated: true })
-            }
-            onScrollBeginDrag={() => {
-              // Mark messages as read when user starts scrolling
-              if (messages.length > 0 && socketManager.isSocketConnected()) {
-                const unreadMessages = messages.filter(
-                  (msg) =>
-                    msg.senderId !== currentUserId && msg.status !== "read"
-                );
-
-                if (unreadMessages.length > 0) {
-                  const messageIds = unreadMessages.map((msg) => msg.id);
-                  socketManager.markMessagesAsRead(
-                    conversationId,
-                    messageIds,
-                    currentUserId || "current_user"
-                  );
-
-                  // Update local message status
-                  setMessages((prev) =>
-                    prev.map((msg) =>
-                      messageIds.includes(msg.id)
-                        ? { ...msg, status: "read" }
-                        : msg
-                    )
-                  );
-
-                  // Reset unread count
-                  setUnreadCount(0);
-                }
-              }
-            }}
-            showsVerticalScrollIndicator={false}
-          />
-          {/* Input */}
-          <View className="bg-white px-2 py-3 border-t border-gray-200">
-            <View className="flex flex-row items-center space-x-3">
-              <View className="flex-row items-center px-4 bg-white">
-                {!inputFocused ? (
-                  <View className="flex flex-row justify-between items-center">
-                    <TouchableOpacity
-                      className="mr-3"
-                      onPress={handleAttachFile}
-                    >
-                      <AntDesign name="paperclip" size={24} color="#a855f7" />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      className="mx-3"
-                      onPress={handleTakePhoto}
-                    >
-                      <AntDesign name="camera" size={24} color="#a855f7" />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      className="mx-3"
-                      onPress={handlePickImage}
-                    >
-                      <AntDesign name="picture" size={24} color="#a855f7" />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      className="mx-3"
-                      onPress={recording ? stopRecording : startRecording}
-                    >
-                      <FontAwesome
-                        name="microphone"
-                        size={24}
-                        color={recording ? "#ff0000" : "#a855f7"}
+            {/* Messages */}
+            <FlatList
+              data={getMessagesWithTyping()} // Thay vì messages
+              renderItem={({ item, index }) => {
+                if ((item as any).kind === "typing") {
+                  return (
+                    <View className="flex flex-row">
+                      <Image
+                        source={images.defaultAvatar}
+                        className="w-14 h-14 rounded-full mr-2"
+                        resizeMode="cover"
+                        style={{ width: 30, height: 30 }}
                       />
+                      <TypingDots />
+                    </View>
+                  );
+                }
+                return renderMessage({ item: item as Message, index });
+              }}
+              keyExtractor={(item) => item.id}
+              className="flex-1 p-4 bg-white"
+              contentContainerStyle={{ paddingBottom: 16 }}
+              keyboardShouldPersistTaps="handled"
+              ref={flatListRef}
+              onContentSizeChange={() =>
+                flatListRef.current?.scrollToEnd({ animated: true })
+              }
+              onScrollBeginDrag={() => {
+                // Mark messages as read when user starts scrolling
+                if (messages.length > 0 && socketManager.isSocketConnected()) {
+                  const unreadMessages = messages.filter(
+                    (msg) =>
+                      msg.senderId !== currentUserId && msg.status !== "read"
+                  );
+
+                  if (unreadMessages.length > 0) {
+                    const messageIds = unreadMessages.map((msg) => msg.id);
+                    socketManager.markMessagesAsRead(
+                      conversationId,
+                      messageIds,
+                      currentUserId || "current_user"
+                    );
+
+                    // Update local message status
+                    setMessages((prev) =>
+                      prev.map((msg) =>
+                        messageIds.includes(msg.id)
+                          ? { ...msg, status: "read" }
+                          : msg
+                      )
+                    );
+
+                    // Reset unread count
+                    setUnreadCount(0);
+                  }
+                }
+              }}
+              showsVerticalScrollIndicator={false}
+            />
+            {/* Input */}
+            <View className="bg-white px-2 py-3 border-t border-gray-200">
+              <View className="flex flex-row items-center space-x-3">
+                <View className="flex-row items-center px-4 bg-white">
+                  {!inputFocused ? (
+                    <View className="flex flex-row justify-between items-center">
+                      <TouchableOpacity
+                        className="mr-3"
+                        onPress={handleAttachFile}
+                      >
+                        <AntDesign name="paperclip" size={24} color="#a855f7" />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        className="mx-3"
+                        onPress={handleTakePhoto}
+                      >
+                        <AntDesign name="camera" size={24} color="#a855f7" />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        className="mx-3"
+                        onPress={handlePickImage}
+                      >
+                        <AntDesign name="picture" size={24} color="#a855f7" />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        className="mx-3"
+                        onPress={recording ? stopRecording : startRecording}
+                      >
+                        <FontAwesome
+                          name="microphone"
+                          size={24}
+                          color={recording ? "#ff0000" : "#a855f7"}
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      className="mr-4 flex items-center"
+                      onPress={() => {
+                        if (inputRef.current) inputRef.current.blur();
+                      }}
+                    >
+                      <AntDesign name="left" size={24} color="#a855f7" />
                     </TouchableOpacity>
-                  </View>
-                ) : (
-                  <TouchableOpacity
-                    className="mr-4 flex items-center"
-                    onPress={() => {
-                      if (inputRef.current) inputRef.current.blur();
+                  )}
+
+                  <Animated.View
+                    style={{
+                      flex: 1,
+                      transform: [{ translateX: inputTranslate }],
                     }}
                   >
-                    <AntDesign name="left" size={24} color="#a855f7" />
-                  </TouchableOpacity>
-                )}
+                    <View className="bg-gray-100 rounded-full flex-1 flex-row items-center">
+                      <TextInput
+                        value={message}
+                        onChangeText={setMessage}
+                        placeholder="Aa"
+                        className="flex-1 text-gray-800 font-medium w-full px-4"
+                        onFocus={handleFocus}
+                        onBlur={handleBlur}
+                        style={{ flex: 1 }}
+                        ref={inputRef}
+                        multiline
+                        maxLength={1000}
+                      />
+                      {message.length > 0 && (
+                        <TouchableOpacity
+                          onPress={() => setMessage("")}
+                          className="p-2"
+                        >
+                          <AntDesign name="close" size={18} color="#888" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </Animated.View>
 
-                <Animated.View
-                  style={{
-                    flex: 1,
-                    transform: [{ translateX: inputTranslate }],
-                  }}
-                >
-                  <View className="bg-gray-100 rounded-full flex-1 flex-row items-center">
-                    <TextInput
-                      value={message}
-                      onChangeText={setMessage}
-                      placeholder="Aa"
-                      className="flex-1 text-gray-800 font-medium w-full px-4"
-                      onFocus={handleFocus}
-                      onBlur={handleBlur}
-                      style={{ flex: 1 }}
-                      ref={inputRef}
-                      multiline
-                      maxLength={1000}
+                  <TouchableOpacity
+                    onPress={handleSendMessage}
+                    disabled={!message.trim() || sending}
+                    className={`ml-3 p-2 rounded-full ${
+                      message.trim() && !sending ? "bg-primary" : "bg-gray-300"
+                    }`}
+                  >
+                    <Feather
+                      name="send"
+                      size={20}
+                      color={message.trim() && !sending ? "white" : "#888"}
                     />
-                    {message.length > 0 && (
-                      <TouchableOpacity
-                        onPress={() => setMessage("")}
-                        className="p-2"
-                      >
-                        <AntDesign name="close" size={18} color="#888" />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </Animated.View>
-
-                <TouchableOpacity
-                  onPress={handleSendMessage}
-                  disabled={!message.trim() || sending}
-                  className={`ml-3 p-2 rounded-full ${
-                    message.trim() && !sending ? "bg-primary" : "bg-gray-300"
-                  }`}
-                >
-                  <Feather
-                    name="send"
-                    size={20}
-                    color={message.trim() && !sending ? "white" : "#888"}
-                  />
-                </TouchableOpacity>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
           </View>
-        </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </SafeAreaProvider>
   );
 };
 

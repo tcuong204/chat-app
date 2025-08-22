@@ -7,7 +7,6 @@ import {
   Alert,
   Animated,
   FlatList,
-  SafeAreaView,
   ScrollView,
   Text,
   TouchableOpacity,
@@ -29,6 +28,7 @@ import { getFriends } from "@/api/friendApi";
 import { images } from "@/constants/images";
 import { showSuccess } from "@/utils/customToast";
 import { getAccount } from "@/utils/secureStore";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import {
   ContactCard,
   Header,
@@ -540,110 +540,112 @@ export default function Index() {
   };
   return (
     <GestureHandlerRootView>
-      <SafeAreaView className="flex-1 bg-white">
-        <Animated.View
-          style={{
-            flex: 1,
-            transform: [{ translateY: translateYAnimated }],
-          }}
-        >
-          <View className="flex flex-col h-full bg-gray-50">
-            {/* Header - Now handles its own search mode */}
-            <Header
-              title={name}
-              subtitle="Hello,"
-              showSearch={true}
-              showNewMessage={true}
-              searchValue={searchQuery}
-              onSearchChange={(q) => {
-                setSearchQuery(q);
-              }}
-              translateY={translateYAnimated}
-              onSearchPress={handleSearchPress}
-              onNewMessagePress={() => setShowNewMessageModal(true)}
-              isSearchMode={isSearchMode}
-              onSearchClose={handleSearchClose}
-            />
-            {/* Content */}
-            {isSearchMode ? (
-              // Search Results
-              <View className="flex-1 bg-white">
-                {searchQuery.length === 0 ? (
-                  <View className="px-4 py-4">
-                    <Text className="text-lg font-semibold text-gray-800 mb-4">
-                      Tìm kiếm gần đây
-                    </Text>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                    >
-                      <View className="flex-row space-x-2">
-                        {["Larry", "Natalie", "Jennifer", "Sofia"].map(
-                          (search, index) => (
-                            <TouchableOpacity
-                              key={index}
-                              className="px-4 py-2 bg-gray-100 rounded-full"
-                              onPress={() => setSearchQuery(search)}
-                            >
-                              <Text className="text-gray-700 font-medium">
-                                {search}
-                              </Text>
-                            </TouchableOpacity>
-                          )
-                        )}
-                      </View>
-                    </ScrollView>
-                  </View>
-                ) : (
-                  <FlatList
-                    data={searchResults}
-                    renderItem={renderUserItem}
-                    keyExtractor={(item) => item.id.toString()}
-                    showsVerticalScrollIndicator={false}
-                  />
-                )}
-              </View>
-            ) : (
-              // Chat List
-              <View className="flex-1 bg-bgPrimary">
-                {/* Tab Navigation */}
-                <TabNavigation tabs={tabs} onTabPress={handleTabPress} />
-
-                {/* Chat Messages */}
-                <View className="bg-bgPrimary rounded-lg flex-1">
-                  <FlatList
-                    data={chatData}
-                    renderItem={renderChatItem}
-                    keyExtractor={(item) => item.id.toString()}
-                    showsVerticalScrollIndicator={false}
-                    refreshControl={
-                      <RefreshControl
-                        refreshing={refreshing}
-                        onRefresh={onRefresh}
-                      />
-                    }
-                  />
+      <SafeAreaProvider>
+        <SafeAreaView className="flex-1 bg-white">
+          <Animated.View
+            style={{
+              flex: 1,
+              transform: [{ translateY: translateYAnimated }],
+            }}
+          >
+            <View className="flex flex-col h-full bg-gray-50">
+              {/* Header - Now handles its own search mode */}
+              <Header
+                title={name}
+                subtitle="Hello,"
+                showSearch={true}
+                showNewMessage={true}
+                searchValue={searchQuery}
+                onSearchChange={(q) => {
+                  setSearchQuery(q);
+                }}
+                translateY={translateYAnimated}
+                onSearchPress={handleSearchPress}
+                onNewMessagePress={() => setShowNewMessageModal(true)}
+                isSearchMode={isSearchMode}
+                onSearchClose={handleSearchClose}
+              />
+              {/* Content */}
+              {isSearchMode ? (
+                // Search Results
+                <View className="flex-1 bg-white">
+                  {searchQuery.length === 0 ? (
+                    <View className="px-4 py-4">
+                      <Text className="text-lg font-semibold text-gray-800 mb-4">
+                        Tìm kiếm gần đây
+                      </Text>
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                      >
+                        <View className="flex-row space-x-2">
+                          {["Larry", "Natalie", "Jennifer", "Sofia"].map(
+                            (search, index) => (
+                              <TouchableOpacity
+                                key={index}
+                                className="px-4 py-2 bg-gray-100 rounded-full"
+                                onPress={() => setSearchQuery(search)}
+                              >
+                                <Text className="text-gray-700 font-medium">
+                                  {search}
+                                </Text>
+                              </TouchableOpacity>
+                            )
+                          )}
+                        </View>
+                      </ScrollView>
+                    </View>
+                  ) : (
+                    <FlatList
+                      data={searchResults}
+                      renderItem={renderUserItem}
+                      keyExtractor={(item) => item.id.toString()}
+                      showsVerticalScrollIndicator={false}
+                    />
+                  )}
                 </View>
-              </View>
-            )}
+              ) : (
+                // Chat List
+                <View className="flex-1 bg-bgPrimary">
+                  {/* Tab Navigation */}
+                  <TabNavigation tabs={tabs} onTabPress={handleTabPress} />
 
-            {/* New Message Modal */}
-            <NewMessageModal
-              setSearchQuery={setSearchQuery}
-              show={showNewMessageModal}
-              setShow={setShowNewMessageModal}
-              onClose={handleCloseModal}
-              contacts={searchResults}
-              friends={contactsData}
-              searchQuery={searchQuery}
-              onSearchChange={(q) => {
-                setSearchQuery(q);
-              }}
-              onContactPress={handleContactPress}
-            />
-          </View>
-        </Animated.View>
-      </SafeAreaView>
+                  {/* Chat Messages */}
+                  <View className="bg-bgPrimary rounded-lg flex-1">
+                    <FlatList
+                      data={chatData}
+                      renderItem={renderChatItem}
+                      keyExtractor={(item) => item.id.toString()}
+                      showsVerticalScrollIndicator={false}
+                      refreshControl={
+                        <RefreshControl
+                          refreshing={refreshing}
+                          onRefresh={onRefresh}
+                        />
+                      }
+                    />
+                  </View>
+                </View>
+              )}
+
+              {/* New Message Modal */}
+              <NewMessageModal
+                setSearchQuery={setSearchQuery}
+                show={showNewMessageModal}
+                setShow={setShowNewMessageModal}
+                onClose={handleCloseModal}
+                contacts={searchResults}
+                friends={contactsData}
+                searchQuery={searchQuery}
+                onSearchChange={(q) => {
+                  setSearchQuery(q);
+                }}
+                onContactPress={handleContactPress}
+              />
+            </View>
+          </Animated.View>
+        </SafeAreaView>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

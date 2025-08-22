@@ -1,7 +1,18 @@
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
 import { Camera } from "expo-camera";
+import Constants from "expo-constants";
 import type { PermissionStatus } from "expo-modules-core";
+import { Platform } from "react-native";
+import {
+  mediaDevices,
+  MediaStream,
+  RTCIceCandidate,
+  RTCPeerConnection,
+  RTCTrackEvent,
+} from "react-native-webrtc";
 import { io, Socket } from "socket.io-client";
+
+// WebRTC objects are imported from react-native-webrtc above
 
 // Types
 interface CallData {
@@ -49,6 +60,7 @@ export class VoiceCallService {
   // Socket Connection
   private socket: Socket | null = null;
   public isConnected: boolean = false;
+  public onDisconnect: (() => void) | null = null;
 
   // Call State
   private currentCallId: string | null = null;
@@ -72,6 +84,10 @@ export class VoiceCallService {
   // Audio Context for visualization
   private audioContext: AudioContext | null = null;
 
+  // WebRTC availability flag
+  private webRTCInitialized: boolean = false;
+  private webRTCInitializationPromise: Promise<void> | null = null;
+
   // Configuration
   private config: RTCConfiguration = {
     iceServers: [
@@ -94,9 +110,97 @@ export class VoiceCallService {
   public onError: ((error: { message: string; code?: string }) => void) | null =
     null;
   public onDebugUpdate: ((debugInfo: DebugInfo) => void) | null = null;
+  public onRemoteStreamUpdate: ((stream: MediaStream | null) => void) | null =
+    null;
 
   constructor() {
     this.setupAudioSession();
+    this.initializeWebRTC();
+  }
+
+  /**
+   * Initialize WebRTC components
+   */
+  private async initializeWebRTC(): Promise<void> {
+    if (this.webRTCInitializationPromise) {
+      return this.webRTCInitializationPromise;
+    }
+
+    this.webRTCInitializationPromise = this._initializeWebRTC();
+    return this.webRTCInitializationPromise;
+  }
+
+  private async _initializeWebRTC(): Promise<void> {
+    try {
+      this.log("info", "Initializing WebRTC...");
+
+      // Check if we're in a development build or Expo Go
+      if (Platform.OS === "web") {
+        // Web platform - WebRTC should be available
+        this.webRTCInitialized = true;
+        this.log("success", "WebRTC initialized for web platform");
+        return;
+      }
+
+      // For React Native, we need to wait for react-native-webrtc to be available
+      let retries = 0;
+      const maxRetries = 100; // Increased retries for slower devices
+
+      while (
+        (typeof RTCPeerConnection === "undefined" ||
+          !mediaDevices ||
+          typeof mediaDevices.getUserMedia !== "function") &&
+        retries < maxRetries
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        retries++;
+
+        if (retries % 10 === 0) {
+          this.log(
+            "info",
+            `WebRTC initialization attempt ${retries}/${maxRetries}`
+          );
+        }
+      }
+
+      if (typeof RTCPeerConnection === "undefined") {
+        this.log(
+          "error",
+          "RTCPeerConnection is not available after initialization attempts"
+        );
+        this.webRTCInitialized = false;
+        return;
+      }
+
+      if (!mediaDevices || typeof mediaDevices.getUserMedia !== "function") {
+        this.log(
+          "error",
+          "mediaDevices.getUserMedia is not available after initialization attempts"
+        );
+        this.webRTCInitialized = false;
+        return;
+      }
+
+      // Test basic WebRTC functionality
+      try {
+        const testPC = new RTCPeerConnection();
+        testPC.close();
+        this.log("success", "RTCPeerConnection creation test passed");
+        this.webRTCInitialized = true;
+      } catch (testError) {
+        this.log("error", `RTCPeerConnection test failed: ${testError}`);
+        this.webRTCInitialized = false;
+        return;
+      }
+
+      this.log(
+        "success",
+        `WebRTC initialized successfully after ${retries} attempts`
+      );
+    } catch (error) {
+      this.log("error", `Failed to initialize WebRTC: ${error}`);
+      this.webRTCInitialized = false;
+    }
   }
 
   /**
@@ -159,6 +263,14 @@ export class VoiceCallService {
             `Connected to server with socket ID: ${this.socket!.id}`
           );
           resolve();
+        });
+
+        this.socket!.on("disconnect", () => {
+          this.isConnected = false;
+          this.log("warning", "Disconnected from server");
+          if (this.onDisconnect) {
+            this.onDisconnect();
+          }
         });
 
         this.socket!.on("connect_error", (error) => {
@@ -228,12 +340,22 @@ export class VoiceCallService {
 
     this.socket.on("call:declined", (data: CallData) => {
       this.log("warning", `Call declined: ${data.callId}`);
-      this.handleCallDeclined(data);
+      if (this.currentCallId === data.callId) {
+        this.handleCallDeclined(data);
+        this.cleanup();
+        this.callState = "ended";
+        this.notifyStateChange();
+        if (this.onCallEnded) {
+          this.onCallEnded();
+        }
+      }
     });
 
     this.socket.on("call:ended", (data: CallData) => {
       this.log("info", `Call ended: ${data.callId}`);
-      this.handleCallHangup(data);
+      if (this.currentCallId === data.callId) {
+        this.handleCallHangup(data);
+      }
     });
 
     this.socket.on(
@@ -311,8 +433,13 @@ export class VoiceCallService {
         }
       }
 
-      // For React Native, we need to use native modules or WebRTC libraries
-      // This is a placeholder - you'll need react-native-webrtc for actual implementation
+      // For React Native, use react-native-webrtc mediaDevices
+      if (!mediaDevices || typeof mediaDevices.getUserMedia !== "function") {
+        throw new Error(
+          "WebRTC mediaDevices not available. Please ensure react-native-webrtc is properly configured."
+        );
+      }
+
       const constraints: MediaStreamConstraints = {
         audio: {
           echoCancellation: true,
@@ -327,9 +454,10 @@ export class VoiceCallService {
         };
       }
 
-      // Note: In React Native, you'll need to use react-native-webrtc
-      // This is just a placeholder for the web getUserMedia API
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      // Use WebRTC getUserMedia API
+      const stream = (await mediaDevices.getUserMedia(
+        constraints
+      )) as unknown as MediaStream;
       this.localStream = stream;
 
       this.isVideoCall = includeVideo;
@@ -353,6 +481,38 @@ export class VoiceCallService {
 
       if (this.callState !== "idle") {
         throw new Error("Already in a call");
+      }
+
+      // Check if we're in a development build
+      if (!this.isDevelopmentBuild()) {
+        throw new Error(
+          "WebRTC requires a development build. You cannot use Expo Go for voice calls. " +
+            "Please run 'npx expo run:android' instead of 'npx expo start'."
+        );
+      }
+
+      // Ensure WebRTC is available
+      if (typeof RTCPeerConnection === "undefined") {
+        const status = this.getWebRTCStatus();
+        throw new Error(
+          `WebRTC is not available: ${
+            status.errorMessage || "Unknown error"
+          }. ` +
+            `Platform: ${status.platform}. ` +
+            `If you're using Expo Go, you need to create a development build with 'expo run:android' or 'expo run:ios'.`
+        );
+      }
+
+      // Wait for WebRTC to be fully ready
+      const webRTCReady = await this.waitForWebRTC(10000);
+      if (!webRTCReady) {
+        const status = this.getWebRTCStatus();
+        throw new Error(
+          `WebRTC failed to initialize within timeout. Status: ${JSON.stringify(
+            status
+          )}. ` +
+            `Please ensure you're using a development build and not Expo Go.`
+        );
       }
 
       this.log("info", `Starting voice call to user: ${targetUserId}`);
@@ -448,11 +608,13 @@ export class VoiceCallService {
         throw new Error("No call data available");
       }
 
+      if (this.callState !== "ringing") {
+        throw new Error("No incoming call to answer");
+      }
+
       this.log("info", `Answering call: ${actualCallData.callId}`);
-      this.currentCallId = actualCallData.callId;
       this.callState = "connecting";
-      this.isInitiator = false;
-      this.isVideoCall = actualCallData.callType === "video";
+      this.notifyStateChange();
 
       await this.getUserMedia(this.isVideoCall);
 
@@ -701,14 +863,32 @@ export class VoiceCallService {
 
   private createPeerConnection(): void {
     this.log("info", "Creating PeerConnection...");
+
+    // Ensure WebRTC is available
+    if (typeof RTCPeerConnection === "undefined") {
+      throw new Error(
+        "RTCPeerConnection is not available. Please ensure react-native-webrtc is properly configured."
+      );
+    }
+
     this.peerConnection = new RTCPeerConnection(this.config);
 
-    this.peerConnection.ontrack = (event) => {
+    this.peerConnection.ontrack = (event: RTCTrackEvent) => {
+      if (!this.peerConnection) {
+        return;
+      }
       this.log("success", `Remote ${event.track.kind} stream received`);
       this.remoteStream = event.streams[0];
+
+      if (this.onRemoteStreamUpdate) {
+        this.onRemoteStreamUpdate(this.remoteStream);
+      }
     };
 
     this.peerConnection.onicecandidate = (event) => {
+      if (!this.peerConnection) {
+        return;
+      }
       if (event.candidate) {
         if (this.currentCallId) {
           this.socket!.emit("call:ice_candidate", {
@@ -722,7 +902,10 @@ export class VoiceCallService {
     };
 
     this.peerConnection.oniceconnectionstatechange = () => {
-      const state = this.peerConnection!.iceConnectionState;
+      if (!this.peerConnection) {
+        return;
+      }
+      const state = this.peerConnection.iceConnectionState;
       this.log("info", `ICE connection state: ${state}`);
 
       if (state === "connected" || state === "completed") {
@@ -738,11 +921,20 @@ export class VoiceCallService {
 
   private handleIncomingCall(data: CallData): void {
     this.log("success", `Processing incoming call: ${data.callId}`);
+
+    // Reset any existing call state first
+    if (this.callState !== "idle") {
+      this.cleanup();
+    }
+
+    // Store call data but don't create PeerConnection yet
     this.currentCallId = data.callId;
     this.callState = "ringing";
-    this.createPeerConnection();
+    this.isInitiator = false;
+    this.isVideoCall = data.callType === "video";
     this.incomingCallData = data;
 
+    // Notify about incoming call
     if (this.onIncomingCall) {
       this.onIncomingCall(data);
     }
@@ -778,13 +970,39 @@ export class VoiceCallService {
   }
 
   private handleCallDeclined(data: CallData): void {
-    this.log("warning", `Call declined by user`);
-    this.cleanup();
+    if (this.currentCallId === data.callId) {
+      this.log("warning", `Call declined by user`);
+
+      // First update state
+      this.callState = "ended";
+      this.notifyStateChange();
+
+      // Then cleanup
+      this.cleanup();
+
+      // Finally notify
+      if (this.onCallEnded) {
+        this.onCallEnded();
+      }
+    }
   }
 
   private handleCallHangup(data: CallData): void {
-    this.log("info", `Call ended by remote user: ${data.callId}`);
-    this.cleanup();
+    if (this.currentCallId === data.callId) {
+      this.log("info", `Call ended by remote user: ${data.callId}`);
+
+      // First update state
+      this.callState = "ended";
+      this.notifyStateChange();
+
+      // Then cleanup resources
+      this.cleanup();
+
+      // Finally notify call ended
+      if (this.onCallEnded) {
+        this.onCallEnded();
+      }
+    }
   }
 
   private async handleIceCandidate(data: {
@@ -866,12 +1084,34 @@ export class VoiceCallService {
     this.log("info", "Cleaning up call resources");
 
     if (this.localStream) {
-      this.localStream.getTracks().forEach((track) => track.stop());
+      this.localStream.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch (e) {
+          this.log("warning", `Error stopping track: ${e}`);
+        }
+      });
       this.localStream = null;
     }
 
     if (this.peerConnection) {
-      this.peerConnection.close();
+      // Detach handlers to prevent callbacks after null
+      try {
+        (this.peerConnection as any).ontrack = null;
+        (this.peerConnection as any).onicecandidate = null;
+        (this.peerConnection as any).oniceconnectionstatechange = null;
+        (this.peerConnection as any).onconnectionstatechange = null;
+        (this.peerConnection as any).onicegatheringstatechange = null;
+        (this.peerConnection as any).onsignalingstatechange = null;
+      } catch (e) {
+        this.log("warning", `Error detaching handlers: ${e}`);
+      }
+
+      try {
+        this.peerConnection.close();
+      } catch (e) {
+        this.log("warning", `Error closing peer connection: ${e}`);
+      }
       this.peerConnection = null;
     }
 
@@ -888,12 +1128,7 @@ export class VoiceCallService {
     this.iceCandidateQueue = [];
     this.remoteIceCandidateQueue = [];
 
-    this.notifyStateChange();
     this.updateDebugInfo();
-
-    if (this.onCallEnded) {
-      this.onCallEnded();
-    }
   }
 
   private log(
@@ -916,6 +1151,97 @@ export class VoiceCallService {
       isMuted: this.isMuted,
       isSpeakerOn: this.isSpeakerOn,
     };
+  }
+
+  /**
+   * Check if WebRTC is ready for calls
+   */
+  isWebRTCReady(): boolean {
+    return (
+      this.webRTCInitialized &&
+      typeof RTCPeerConnection !== "undefined" &&
+      !!mediaDevices &&
+      typeof mediaDevices.getUserMedia === "function"
+    );
+  }
+
+  /**
+   * Wait for WebRTC to be ready
+   */
+  async waitForWebRTC(timeoutMs: number = 5000): Promise<boolean> {
+    try {
+      // First, ensure WebRTC initialization has started
+      await this.initializeWebRTC();
+
+      // Wait for initialization to complete
+      const startTime = Date.now();
+      while (!this.webRTCInitialized && Date.now() - startTime < timeoutMs) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+
+      return this.isWebRTCReady();
+    } catch (error) {
+      this.log("error", `Error waiting for WebRTC: ${error}`);
+      return false;
+    }
+  }
+
+  /**
+   * Get detailed WebRTC status information
+   */
+  getWebRTCStatus(): {
+    isInitialized: boolean;
+    rtcPeerConnectionAvailable: boolean;
+    navigatorAvailable: boolean;
+    mediaDevicesAvailable: boolean;
+    platform: string;
+    errorMessage?: string;
+  } {
+    type WebRTCStatus = {
+      isInitialized: boolean;
+      rtcPeerConnectionAvailable: boolean;
+      navigatorAvailable: boolean;
+      mediaDevicesAvailable: boolean;
+      platform: string;
+      errorMessage?: string;
+    };
+    const status: WebRTCStatus = {
+      isInitialized: this.webRTCInitialized,
+      rtcPeerConnectionAvailable: typeof RTCPeerConnection !== "undefined",
+      navigatorAvailable: typeof (global as any).navigator !== "undefined",
+      mediaDevicesAvailable:
+        !!mediaDevices && typeof mediaDevices.getUserMedia === "function",
+      platform: Platform.OS,
+    };
+
+    if (!status.rtcPeerConnectionAvailable) {
+      status.errorMessage =
+        "RTCPeerConnection is not available. This usually means react-native-webrtc is not properly installed or linked.";
+    } else if (!status.navigatorAvailable) {
+      status.errorMessage = "navigator object is not available.";
+    } else if (!status.mediaDevicesAvailable) {
+      status.errorMessage = "mediaDevices.getUserMedia is not available.";
+    } else if (!status.isInitialized) {
+      status.errorMessage = "WebRTC initialization is still in progress.";
+    }
+
+    return status;
+  }
+
+  /**
+   * Check if this is a development build (required for WebRTC)
+   */
+  isDevelopmentBuild(): boolean {
+    // In Expo, WebRTC won't work in Expo Go (appOwnership === 'expo').
+    // Dev Client ('guest') and standalone builds ('standalone') are OK.
+    // On web, allow.
+    if (Platform.OS === "web") return true;
+    try {
+      return Constants.appOwnership !== "expo";
+    } catch {
+      // If Constants not available for some reason, fall back to allowing.
+      return true;
+    }
   }
 }
 export const voiceCallService = new VoiceCallService();
