@@ -9,6 +9,41 @@ const axiosInstance = axios.create({
   },
 });
 
+// Add debug logging for API calls
+axiosInstance.interceptors.request.use(request => {
+  console.log('Starting API Request:', {
+    url: request.url,
+    method: request.method,
+    data: request.data,
+    headers: request.headers,
+    baseURL: request.baseURL
+  });
+  return request;
+});
+
+// Add response logging
+axiosInstance.interceptors.response.use(
+  (response) => {
+    console.log('API Response Success:', {
+      url: response.config.url,
+      status: response.status,
+      data: response.data,
+      headers: response.headers
+    });
+    return response;
+  },
+  (error) => {
+    console.log('API Response Error:', {
+      url: error.config?.url,
+      status: error.response?.status,
+      data: error.response?.data,
+      message: error.message,
+      headers: error.config?.headers
+    });
+    return Promise.reject(error);
+  }
+);
+
 // Interceptor cho request (ví dụ: thêm token nếu có)
 axiosInstance.interceptors.request.use(
   async (config) => {

@@ -275,6 +275,10 @@ export class VoiceCallService {
 
         this.socket!.on("connect_error", (error) => {
           this.log("error", `Connection failed: ${error.message}`);
+          this.log("error", `Full error: ${JSON.stringify(error)}`);
+          // Thêm thông tin debug
+          this.log("info", `Connection URL: ${serverUrl}/chat`);
+          this.log("info", `Socket options: ${JSON.stringify(socketOptions)}`);
           reject(error);
         });
 
@@ -357,6 +361,86 @@ export class VoiceCallService {
         this.handleCallHangup(data);
       }
     });
+
+    // Handle call timeout (no answer)
+    this.socket.on(
+      "call:timeout",
+      (data: { callId: string; reason?: string }) => {
+        this.log(
+          "warning",
+          `Call timeout: ${data.callId} - ${data.reason || "No answer"}`
+        );
+        console.debug("📞 Call timeout data:", data);
+
+        // Clean up and end call
+        this.cleanup();
+        this.callState = "ended";
+        this.notifyStateChange();
+
+        // Trigger call ended to close call screen
+        if (this.onCallEnded) {
+          this.onCallEnded();
+        }
+      }
+    );
+
+    // Handle call timeout (no answer)
+    this.socket.on(
+      "call:timeout",
+      (data: { callId: string; reason?: string }) => {
+        this.log(
+          "warning",
+          `Call timeout: ${data.callId} - ${data.reason || "No answer"}`
+        );
+        console.debug("📞 Call timeout data:", data);
+        if (this.currentCallId === data.callId) {
+          // Create CallData object for timeout
+          const timeoutData: CallData = {
+            callId: data.callId,
+            callerId: "", // Empty since we don't have caller info in timeout
+            callType: "voice", // Default to voice since we don't have type info
+            reason: data.reason,
+          };
+
+          this.handleCallHangup(timeoutData);
+
+          // Clean up call state
+          this.cleanup();
+          this.callState = "ended";
+          this.notifyStateChange();
+
+          // Notify UI that call timed out
+          if (this.onError) {
+            this.onError({
+              message: "Cuộc gọi đã hết thời gian chờ",
+              code: "CALL_TIMEOUT",
+            });
+          }
+        }
+      }
+    );
+
+    // Handle call timeout (no answer)
+    this.socket.on(
+      "call:timeout",
+      (data: { callId: string; reason?: string }) => {
+        this.log(
+          "warning",
+          `Call timeout: ${data.callId} - ${data.reason || "No answer"}`
+        );
+        console.debug("📞 Call timeout data:", data);
+        if (this.currentCallId === data.callId) {
+          this.handleCallHangup(data);
+          // Notify UI that call timed out
+          if (this.onError) {
+            this.onError({
+              message: "Cuộc gọi đã hết thời gian chờ",
+              code: "CALL_TIMEOUT",
+            });
+          }
+        }
+      }
+    );
 
     this.socket.on(
       "call:ice_candidate",

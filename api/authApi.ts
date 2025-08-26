@@ -21,17 +21,39 @@ export async function getDeviceInfo() {
     // handle error
   }
 
-  return {
+  // Get correct platform name
+  let platform = "android";
+  if (Device.osName?.toLowerCase().includes("ios")) {
+    platform = "ios";
+  } else if (Device.osName?.toLowerCase().includes("windows")) {
+    platform = "windows";
+  } else if (Device.osName?.toLowerCase().includes("macos")) {
+    platform = "macos";
+  }
+
+  const deviceInfo = {
     deviceId:
       "Device:" + Device.osInternalBuildId ||
       "Device:" + Device.modelId ||
       "Device:" + "unknown",
     deviceName: Device.deviceName || Device.modelName || "unknown",
     deviceType: Device.deviceType === 1 ? "mobile" : "mobile",
-    platform: Device.osName?.toLowerCase() || "unknown",
-    pushToken: "expo_push_token_xyz789",
-    appVersion: Constants.expoConfig?.version || "unknown",
+    platform: platform, // Use validated platform value
+    pushToken: pushToken || "expo_push_token_xyz789",
+    appVersion: Constants.expoConfig?.version || "1.0.0",
   };
+
+  // Log device info for debugging
+  console.log("Device Info Details:", {
+    ...deviceInfo,
+    osName: Device.osName,
+    osVersion: Device.osVersion,
+    manufacturer: Device.manufacturer,
+    modelId: Device.modelId,
+    deviceType: Device.deviceType,
+  });
+  
+  return deviceInfo;
 }
 
 // Đăng nhập

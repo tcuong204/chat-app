@@ -1,5 +1,5 @@
 // Android Emulator cannot reach host via localhost; use 10.0.2.2
 // iOS Simulator can use localhost
-export const LOCALIP = "72ea62dd113c.ngrok-free.app";
+export const LOCALIP = "3bd982caf4a2.ngrok-free.apps";
 // If you run on a physical device, consider setting your LAN IP here instead
 // e.g. export const LOCALIP = "192.168.x.x:3000";

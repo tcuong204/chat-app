@@ -124,7 +124,24 @@ const LoginScreen = () => {
               // Chuyển trang đến màn hình chính
               router.replace("/(tabs)");
             } catch (err: any) {
-              setStatus(err?.response?.data?.message || "Đăng nhập thất bại");
+              console.log('Login Error Details:', {
+                message: err.message,
+                response: err?.response?.data,
+                status: err?.response?.status,
+                config: {
+                  url: err?.config?.url,
+                  method: err?.config?.method,
+                  baseURL: err?.config?.baseURL,
+                  data: err?.config?.data
+                },
+                deviceInfo: JSON.parse(err?.config?.data || '{}').deviceInfo
+              });
+              
+              if (err.message.includes('Network Error')) {
+                setStatus('Không thể kết nối đến server. Vui lòng kiểm tra kết nối mạng và URL server.');
+              } else {
+                setStatus(err?.response?.data?.message || "Đăng nhập thất bại");
+              }
             } finally {
               setSubmitting(false);
             }

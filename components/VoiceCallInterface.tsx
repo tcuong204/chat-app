@@ -393,7 +393,10 @@ export const VoiceCallInterface: React.FC<VoiceCallInterfaceProps> = ({
               </>
             ) : (
               // Active call controls
-              <View className="flex flex-row items-center bg-amber-200 rounded-xl justify-between w-[90%]">
+              <View
+                className="flex flex-row items-center  rounded-xl justify-between w-[90%]"
+                style={{ backgroundColor: "#3D3D3A" }}
+              >
                 <TouchableOpacity
                   style={styles.controlButton}
                   onPress={endCall}
@@ -401,10 +404,7 @@ export const VoiceCallInterface: React.FC<VoiceCallInterfaceProps> = ({
                   <Ionicons name="call" size={24} color="#ef4444" />
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[
-                    styles.controlButton,
-                    isMuted && styles.activeControlButton,
-                  ]}
+                  style={[styles.controlButton]}
                   onPress={toggleMute}
                 >
                   <Ionicons
@@ -415,13 +415,14 @@ export const VoiceCallInterface: React.FC<VoiceCallInterfaceProps> = ({
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[
-                    styles.controlButton,
-                    isSpeakerOn && styles.activeControlButton,
-                  ]}
+                  style={[styles.controlButton]}
                   onPress={toggleSpeaker}
                 >
-                  <Ionicons name="volume-high" size={24} color="white" />
+                  <Ionicons
+                    name={isSpeakerOn ? "volume-high" : "volume-low"}
+                    size={24}
+                    color="white"
+                  />
                 </TouchableOpacity>
 
                 {/* Video Call Controls */}
@@ -440,21 +441,7 @@ export const VoiceCallInterface: React.FC<VoiceCallInterfaceProps> = ({
                           size={28}
                           color={!isVideoEnabled ? "#FF6B6B" : "#4CAF50"}
                         />
-                        {!isVideoEnabled && (
-                          <View style={styles.videoDisabledIndicator}>
-                            <Text
-                              style={styles.videoDisabledText}
-                              className="text-amber-50"
-                            ></Text>
-                          </View>
-                        )}
                       </View>
-                      <Text
-                        style={[
-                          styles.buttonText,
-                          !isVideoEnabled && styles.videoDisabledText,
-                        ]}
-                      ></Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -466,7 +453,6 @@ export const VoiceCallInterface: React.FC<VoiceCallInterfaceProps> = ({
                         size={24}
                         color="#2196F3"
                       />
-                      <Text style={styles.buttonText}></Text>
                     </TouchableOpacity>
                   </>
                 )}
@@ -486,11 +472,8 @@ const styles = StyleSheet.create({
   videoControlButton: {
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(0,0,0,0.6)",
     borderRadius: 12,
     padding: 12,
-    minWidth: 100,
-    marginHorizontal: 4,
   },
   videoDisabledButton: {
     backgroundColor: "rgba(255,0,0,0.2)",
