@@ -28,7 +28,39 @@ export default function RootLayout() {
       !account ? router.replace("/(auth)/welcome") : router.replace("/(tabs)");
       setCheckingAuth(false);
     }
+    const setupVoiceCall = async () => {
+      const account = await getAccount();
+      if (account && (account as any)?.accessToken) {
+        try {
+          console.log("Setting up voice call service...");
+          await voiceCallService.connect(
+            `https://${LOCALIP}`,
+            (account as any).user.id,
+            (account as any).accessToken
+          );
+          console.log("Voice call service connected successfully");
+
+          // Setup voice call handling after successful connection
+          voiceCallService.onIncomingCall = (callData) => {
+            console.log("Incoming call received:", callData);
+            router.push({
+              pathname: "/voice-call",
+              params: {
+                targetUserId: callData.callerId,
+                targetUserName: callData.callerName || "Unknown",
+                isIncoming: "true",
+                callType: callData.callType,
+              },
+            });
+          };
+        } catch (error) {
+          console.error("Failed to connect voice call service:", error);
+        }
+      }
+    };
+
     checkLogin();
+    setupVoiceCall(); // Call this after checkLogin
 
     // Refresh token mỗi 15 phút
     const interval = setInterval(async () => {

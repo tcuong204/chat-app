@@ -52,7 +52,7 @@ export async function getDeviceInfo() {
     modelId: Device.modelId,
     deviceType: Device.deviceType,
   });
-  
+
   return deviceInfo;
 }
 

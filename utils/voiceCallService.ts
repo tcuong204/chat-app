@@ -231,6 +231,11 @@ export class VoiceCallService {
     authToken?: string
   ): Promise<void> {
     try {
+      console.log("VoiceCall Debug - Connecting with:", {
+        serverUrl,
+        userId,
+        hasToken: !!authToken,
+      });
       this.log("info", `Connecting to ${serverUrl} as user ${userId}`);
 
       const socketOptions: any = {
@@ -325,6 +330,7 @@ export class VoiceCallService {
     });
 
     this.socket.on("call:incoming", (data: CallData) => {
+      console.log("VoiceCall Debug - Received incoming call event:", data);
       this.log(
         "success",
         `Incoming call from ${data.callerId}: ${data.callId}`
