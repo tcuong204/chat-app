@@ -58,6 +58,12 @@ const getMimeType = (fileName: string): string => {
       return "video/mp4";
     case "mp3":
       return "audio/mpeg";
+    case "m4a":
+      return "audio/mp4"; // Correct MIME type for M4A audio
+    case "aac":
+      return "audio/aac";
+    case "wav":
+      return "audio/wav";
     case "pdf":
       return "application/pdf";
     case "doc":
@@ -78,7 +84,17 @@ export const uploadFiles = async (
     // Append each file to FormData
     files.forEach((file) => {
       const fileName = file.name || file.uri.split("/").pop() || "file";
-      const mimeType = file.type || getMimeType(fileName);
+      // Ensure we have the correct MIME type for audio files
+      let mimeType = file.type;
+      if (!mimeType || mimeType === "application/octet-stream") {
+        mimeType = getMimeType(fileName);
+      }
+
+      console.log("Uploading file:", {
+        fileName,
+        mimeType,
+        size: file.size,
+      });
 
       formData.append("files", {
         uri: file.uri,

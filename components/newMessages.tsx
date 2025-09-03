@@ -187,6 +187,7 @@ const NewMessageModal: React.FC<NewMessageModalProps> = ({
         snapPoints={snapPoints}
         onChange={handleSheetChanges}
         enablePanDownToClose
+        index={-1}
         backdropComponent={renderBackdrop}
         handleComponent={() => null}
       >

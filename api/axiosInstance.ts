@@ -2,7 +2,7 @@ import { LOCALIP } from "@/constants/localIp";
 import { getAccount } from "@/utils/secureStore";
 import axios from "axios";
 const axiosInstance = axios.create({
-  baseURL: `https://${LOCALIP}/api/v1`, // Thay đổi URL này cho phù hợp
+  baseURL: `${LOCALIP}/api/v1`, // Thay đổi URL này cho phù hợp
   timeout: 10000, // 10 giây
   headers: {
     "Content-Type": "application/json",

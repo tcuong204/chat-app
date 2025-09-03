@@ -2,6 +2,8 @@ import { LOCALIP } from "@/constants/localIp";
 import AntDesign from "@expo/vector-icons/AntDesign";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useEvent } from "expo";
+import * as FileSystem from "expo-file-system";
+import * as MediaLibrary from "expo-media-library";
 import { useVideoPlayer, VideoView } from "expo-video";
 import React, { useEffect, useState } from "react";
 import {
@@ -10,19 +12,24 @@ import {
   Dimensions,
   Image,
   Modal,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
 // Helper function to replace localhost
 const replaceLocalhost = (url: string | undefined) => {
-  return url?.replace("localhost:3000", `${LOCALIP}`);
+  if (!url) return url;
+  return (
+    url
+      // .replace("http://", "https://") // đổi http thành https
+      .replace("http://localhost:3000", LOCALIP)
+  ); // thay localhost:3000 thành LOCALIP
 };
 const replaceVideohost = (url: string | undefined) => {
   return url?.replace("download", "preview");
@@ -61,14 +68,14 @@ interface MediaFile {
   attachmentOrder?: number;
   caption?: string;
   downloadUrl: string;
-  fileId: string;
-  fileName: string;
-  fileSize: number;
-  mimeType: string;
+  fileId?: string;
+  fileName?: string;
+  fileSize?: number;
+  mimeType?: string;
 }
 
 interface AuthenticatedMediaViewerProps {
-  mediaFile?: MediaFile;
+  mediaFile?: MediaFile | undefined;
   mediaUrl?: string;
   mediaType?: "image" | "video";
   style?: any;
@@ -249,23 +256,32 @@ const AuthenticatedMediaViewer: React.FC<AuthenticatedMediaViewerProps> = ({
   const downloadMedia = async () => {
     if (mediaFile?.downloadUrl) {
       try {
-        Alert.alert(
-          "Download",
-          `File: ${mediaFile.fileName}\nSize: ${(
-            mediaFile.fileSize /
-            1024 /
-            1024
-          ).toFixed(2)} MB`,
-          [
-            { text: "Cancel", style: "cancel" },
-            {
-              text: "Open URL",
-              onPress: () => console.log("Download URL:", processedUrl),
-            },
-          ]
+        const downloadUrl = replaceLocalhost(mediaFile.downloadUrl);
+        // Xin quyền truy cập thư viện ảnh
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert("Lỗi", "Bạn cần cấp quyền truy cập thư viện ảnh");
+          return;
+        }
+        // Tải file về thư mục tạm
+        const fileUri =
+          FileSystem.cacheDirectory +
+          (mediaFile.fileName || "downloaded_image.jpg");
+        const downloadResumable = FileSystem.createDownloadResumable(
+          downloadUrl || "",
+          fileUri
         );
-      } catch (error) {
-        Alert.alert("Lỗi", "Không thể tải xuống file");
+        const downloadResult = await downloadResumable.downloadAsync();
+        if (!downloadResult || !downloadResult.uri) {
+          Alert.alert("Lỗi", "Tải file thất bại.");
+          return;
+        }
+        // Lưu vào thư viện ảnh
+        const asset = await MediaLibrary.createAssetAsync(downloadResult.uri);
+        await MediaLibrary.createAlbumAsync("Download", asset, false);
+        Alert.alert("Thành công", "Ảnh đã được lưu vào thư viện ảnh!");
+      } catch (error: any) {
+        Alert.alert("Lỗi", "Không thể tải xuống file: " + error.message);
       }
     } else {
       Alert.alert("Thông báo", "Tính năng tải xuống sẽ được phát triển");
@@ -345,120 +361,124 @@ const AuthenticatedMediaViewer: React.FC<AuthenticatedMediaViewerProps> = ({
       </TouchableOpacity>
 
       {/* Detail Modal */}
-      <Modal
-        visible={modalVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={closeModal}
-        statusBarTranslucent
-      >
-        <View style={styles.modalContainer}>
-          {/* Header with controls */}
-          <SafeAreaView style={styles.headerContainer}>
-            <View style={styles.header}>
-              <TouchableOpacity
-                onPress={closeModal}
-                style={styles.headerButton}
-              >
-                <AntDesign name="close" size={24} color="white" />
-              </TouchableOpacity>
-
-              <View style={styles.headerActions}>
-                {isVideo && (
+      <SafeAreaProvider>
+        <SafeAreaView>
+          <Modal
+            visible={modalVisible}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={closeModal}
+            statusBarTranslucent
+          >
+            <View style={styles.modalContainer}>
+              {/* Header with controls */}
+              <SafeAreaView style={styles.headerContainer}>
+                <View style={styles.header}>
                   <TouchableOpacity
-                    onPress={toggleVideoPlayback}
+                    onPress={closeModal}
                     style={styles.headerButton}
                   >
-                    <Ionicons
-                      name={isFullVideoPlaying ? "pause" : "play"}
-                      size={24}
-                      color="white"
-                    />
+                    <AntDesign name="close" size={24} color="white" />
                   </TouchableOpacity>
+
+                  <View style={styles.headerActions}>
+                    {isVideo && (
+                      <TouchableOpacity
+                        onPress={toggleVideoPlayback}
+                        style={styles.headerButton}
+                      >
+                        <Ionicons
+                          name={isFullVideoPlaying ? "pause" : "play"}
+                          size={24}
+                          color="white"
+                        />
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity
+                      onPress={downloadMedia}
+                      style={styles.headerButton}
+                    >
+                      <AntDesign name="download" size={24} color="white" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </SafeAreaView>
+
+              {/* Media content */}
+              <View style={styles.mediaContent}>
+                {fullMediaLoading && (
+                  <View style={styles.fullMediaLoading}>
+                    <ActivityIndicator size="large" color="white" />
+                    <Text style={styles.loadingText}>Đang tải...</Text>
+                  </View>
                 )}
-                <TouchableOpacity
-                  onPress={downloadMedia}
-                  style={styles.headerButton}
-                >
-                  <AntDesign name="download" size={24} color="white" />
-                </TouchableOpacity>
+
+                {isVideo ? (
+                  <View style={styles.videoContainer}>
+                    <VideoView
+                      player={fullVideoPlayer}
+                      style={styles.fullVideo}
+                      nativeControls={true}
+                      allowsFullscreen={true}
+                      allowsPictureInPicture={true}
+                    />
+                    {!isFullVideoPlaying && !fullMediaLoading && (
+                      <TouchableOpacity
+                        style={styles.videoPlayButton}
+                        onPress={toggleVideoPlayback}
+                      >
+                        <View style={styles.playButtonContainer}>
+                          <Ionicons name="play" size={60} color="white" />
+                        </View>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ) : (
+                  <ScrollView
+                    contentContainerStyle={styles.scrollContent}
+                    showsVerticalScrollIndicator={false}
+                    maximumZoomScale={3}
+                    minimumZoomScale={1}
+                    bouncesZoom={true}
+                  >
+                    <Image
+                      source={{
+                        uri: processedUrl,
+                      }}
+                      style={styles.fullImage}
+                      resizeMode="contain"
+                      onError={(err) => {
+                        console.log("Full image error:", err);
+                        setFullMediaLoading(false);
+                        Alert.alert("Lỗi", "Không thể tải ảnh");
+                      }}
+                      onLoad={handleFullMediaLoad}
+                    />
+                  </ScrollView>
+                )}
+              </View>
+
+              {/* Media info footer */}
+              <View style={styles.footer}>
+                <Text style={styles.footerText} numberOfLines={1}>
+                  {mediaFile?.fileName ||
+                    processedUrl?.split("/").pop() ||
+                    (isVideo ? "Video" : "Hình ảnh")}
+                </Text>
+                <Text style={styles.footerSubtext}>
+                  {mediaFile?.fileSize &&
+                    `Kích thước: ${(mediaFile.fileSize / 1024 / 1024).toFixed(
+                      2
+                    )} MB • `}
+                  {isVideo
+                    ? "Chạm để phát/tạm dừng • Sử dụng controls để điều khiển"
+                    : "Chạm để phóng to • Kéo để cuộn"}
+                </Text>
               </View>
             </View>
-          </SafeAreaView>
-
-          {/* Media content */}
-          <View style={styles.mediaContent}>
-            {fullMediaLoading && (
-              <View style={styles.fullMediaLoading}>
-                <ActivityIndicator size="large" color="white" />
-                <Text style={styles.loadingText}>Đang tải...</Text>
-              </View>
-            )}
-
-            {isVideo ? (
-              <View style={styles.videoContainer}>
-                <VideoView
-                  player={fullVideoPlayer}
-                  style={styles.fullVideo}
-                  nativeControls={true}
-                  allowsFullscreen={true}
-                  allowsPictureInPicture={true}
-                />
-                {!isFullVideoPlaying && !fullMediaLoading && (
-                  <TouchableOpacity
-                    style={styles.videoPlayButton}
-                    onPress={toggleVideoPlayback}
-                  >
-                    <View style={styles.playButtonContainer}>
-                      <Ionicons name="play" size={60} color="white" />
-                    </View>
-                  </TouchableOpacity>
-                )}
-              </View>
-            ) : (
-              <ScrollView
-                contentContainerStyle={styles.scrollContent}
-                showsVerticalScrollIndicator={false}
-                maximumZoomScale={3}
-                minimumZoomScale={1}
-                bouncesZoom={true}
-              >
-                <Image
-                  source={{
-                    uri: processedUrl,
-                  }}
-                  style={styles.fullImage}
-                  resizeMode="contain"
-                  onError={(err) => {
-                    console.log("Full image error:", err);
-                    setFullMediaLoading(false);
-                    Alert.alert("Lỗi", "Không thể tải ảnh");
-                  }}
-                  onLoad={handleFullMediaLoad}
-                />
-              </ScrollView>
-            )}
-          </View>
-
-          {/* Media info footer */}
-          <View style={styles.footer}>
-            <Text style={styles.footerText} numberOfLines={1}>
-              {mediaFile?.fileName ||
-                processedUrl?.split("/").pop() ||
-                (isVideo ? "Video" : "Hình ảnh")}
-            </Text>
-            <Text style={styles.footerSubtext}>
-              {mediaFile?.fileSize &&
-                `Kích thước: ${(mediaFile.fileSize / 1024 / 1024).toFixed(
-                  2
-                )} MB • `}
-              {isVideo
-                ? "Chạm để phát/tạm dừng • Sử dụng controls để điều khiển"
-                : "Chạm để phóng to • Kéo để cuộn"}
-            </Text>
-          </View>
-        </View>
-      </Modal>
+          </Modal>
+        </SafeAreaView>
+      </SafeAreaProvider>
     </>
   );
 };

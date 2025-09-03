@@ -286,7 +286,7 @@ class SocketManager {
             }
 
             // Create socket connection
-            this.socket = io(`https://${LOCALIP}/chat`, {
+            this.socket = io(`${LOCALIP}/chat`, {
               //http://192.168.1.11:3000
               auth: {
                 token: accessToken,

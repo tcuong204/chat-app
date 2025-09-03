@@ -67,11 +67,13 @@ const SearchInput: React.FC<SearchInputProps> = ({
         transform: [{ scale: scaleValue }, { translateY: translateYValue }],
       }}
       className={className}
+      pointerEvents={pointEvents}
     >
       <View
-        className={`p-3 bg-gray-50 rounded-full flex flex-row items-center border border-gray-200 py-4 ${
+        className={`p-3 bg-gray-50 rounded-full flex flex-row items-center border border-gray-200 py-1 ${
           isFocused ? "border-blue-500" : "border-gray-200"
         }`}
+        pointerEvents={pointEvents}
       >
         <AntDesign
           name="search1"
@@ -89,6 +91,7 @@ const SearchInput: React.FC<SearchInputProps> = ({
           pointerEvents={pointEvents}
           onBlur={handleBlur}
           ref={inputRef}
+          editable={pointEvents === "auto"}
         />
         {value.length > 0 && (
           <TouchableOpacity onPress={() => onChangeText("")}>

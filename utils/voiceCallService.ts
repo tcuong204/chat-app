@@ -8,7 +8,6 @@ import {
   MediaStream,
   RTCIceCandidate,
   RTCPeerConnection,
-  RTCTrackEvent,
 } from "react-native-webrtc";
 import { io, Socket } from "socket.io-client";
 
@@ -19,6 +18,7 @@ interface CallData {
   callId: string;
   callerId: string;
   callerName?: string;
+  callerAvatar?: string;
   callType: "voice" | "video";
   sdpOffer?: RTCSessionDescriptionInit;
   sdpAnswer?: RTCSessionDescriptionInit;
@@ -304,13 +304,33 @@ export class VoiceCallService {
    */
   disconnect(): void {
     if (this.socket) {
+      // Remove all listeners trước khi disconnect
+      this.socket.removeAllListeners();
       this.socket.disconnect();
+      this.socket = null; // Đặt về null
       this.isConnected = false;
       this.log("info", "Disconnected from server");
     }
+
+    // Reset toàn bộ state
     this.cleanup();
+    this.resetServiceState();
   }
 
+  private resetServiceState(): void {
+    this.currentCallId = null;
+    this.callState = "idle";
+    this.isInitiator = false;
+    this.isMuted = false;
+    this.isSpeakerOn = false;
+    this.isVideoCall = false;
+    this.isVideoEnabled = true;
+    this.currentFacingMode = "user";
+    this.incomingCallData = null;
+    this.iceCandidateQueue = [];
+    this.remoteIceCandidateQueue = [];
+    // ĐÃ XOÁ: reset các callback để không làm mất callback UI
+  }
   /**
    * Setup Socket.IO event listeners
    */
@@ -405,7 +425,6 @@ export class VoiceCallService {
             callId: data.callId,
             callerId: "", // Empty since we don't have caller info in timeout
             callType: "voice", // Default to voice since we don't have type info
-            reason: data.reason,
           };
 
           this.handleCallHangup(timeoutData);
@@ -436,7 +455,13 @@ export class VoiceCallService {
         );
         console.debug("📞 Call timeout data:", data);
         if (this.currentCallId === data.callId) {
-          this.handleCallHangup(data);
+          // Construct a minimal CallData object for handleCallHangup
+          const timeoutCallData: CallData = {
+            callId: data.callId,
+            callerId: "", // Unknown in timeout
+            callType: "voice", // Default to voice, adjust if needed
+          };
+          this.handleCallHangup(timeoutCallData);
           // Notify UI that call timed out
           if (this.onError) {
             this.onError({
@@ -504,62 +529,144 @@ export class VoiceCallService {
   /**
    * Get user media with Expo camera/audio
    */
+  private async ensurePermissions(
+    includeVideo: boolean = false
+  ): Promise<void> {
+    try {
+      // Kiểm tra quyền hiện tại
+      const { status: currentAudioStatus } = await Audio.getPermissionsAsync();
+
+      if (currentAudioStatus !== "granted") {
+        this.log("info", "Requesting audio permission...");
+        const { status: audioStatus } = await Audio.requestPermissionsAsync();
+
+        if (audioStatus !== "granted") {
+          throw new Error(
+            "Quyền microphone bị từ chối. Vui lòng cấp quyền trong Settings."
+          );
+        }
+      }
+
+      if (includeVideo) {
+        const { status: currentCameraStatus } =
+          await Camera.getCameraPermissionsAsync();
+
+        if (currentCameraStatus !== "granted") {
+          this.log("info", "Requesting camera permission...");
+          const { status: cameraStatus } =
+            await Camera.requestCameraPermissionsAsync();
+
+          if (cameraStatus !== "granted") {
+            throw new Error(
+              "Quyền camera bị từ chối. Vui lòng cấp quyền trong Settings."
+            );
+          }
+        }
+      }
+
+      this.log("success", "All permissions granted");
+    } catch (error) {
+      this.log("error", `Permission error: ${error}`);
+      throw error;
+    }
+  }
   private async getUserMedia(
     includeVideo: boolean = false,
     facingMode: "front" | "back" = "front"
   ): Promise<MediaStream> {
     try {
-      // Request permissions first
-      const { status: audioStatus } = await Audio.requestPermissionsAsync();
-      if (audioStatus !== "granted") {
-        throw new Error("Audio permission denied");
-      }
+      // Đảm bảo có quyền trước
+      await this.ensurePermissions(includeVideo);
 
-      if (includeVideo) {
-        const { status: cameraStatus } =
-          await Camera.requestCameraPermissionsAsync();
-        if (cameraStatus !== "granted") {
-          throw new Error("Camera permission denied");
-        }
-      }
-
-      // For React Native, use react-native-webrtc mediaDevices
+      // Kiểm tra WebRTC availability
       if (!mediaDevices || typeof mediaDevices.getUserMedia !== "function") {
         throw new Error(
-          "WebRTC mediaDevices not available. Please ensure react-native-webrtc is properly configured."
+          "WebRTC mediaDevices không khả dụng. Hãy đảm bảo bạn đang sử dụng development build."
         );
       }
 
-      const constraints: MediaStreamConstraints = {
+      const constraints: any = {
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
+          sampleRate: 44100, // Thêm sample rate cụ thể
         },
+        video: false, // Mặc định là false
       };
 
       if (includeVideo) {
         constraints.video = {
           facingMode: facingMode === "front" ? "user" : "environment",
+          width: { min: 640, ideal: 1280, max: 1920 },
+          height: { min: 480, ideal: 720, max: 1080 },
+          frameRate: { min: 15, ideal: 30, max: 30 },
         };
       }
 
-      // Use WebRTC getUserMedia API
+      this.log(
+        "info",
+        `Requesting media with constraints: ${JSON.stringify(constraints)}`
+      );
+
       const stream = (await mediaDevices.getUserMedia(
         constraints
-      )) as unknown as MediaStream;
-      this.localStream = stream;
+      )) as MediaStream;
 
+      // Kiểm tra stream có tracks không
+      const audioTracks = stream.getAudioTracks();
+      const videoTracks = stream.getVideoTracks();
+
+      this.log(
+        "info",
+        `Got stream with ${audioTracks.length} audio tracks, ${videoTracks.length} video tracks`
+      );
+
+      if (audioTracks.length === 0) {
+        throw new Error(
+          "Không thể truy cập microphone. Kiểm tra quyền và thiết bị."
+        );
+      }
+
+      // Log thông tin tracks
+      audioTracks.forEach((track, index) => {
+        this.log(
+          "info",
+          `Audio track ${index}: ${track.label}, enabled: ${track.enabled}, readyState: ${track.readyState}`
+        );
+      });
+
+      this.localStream = stream;
       this.isVideoCall = includeVideo;
       this.currentFacingMode = facingMode === "front" ? "user" : "environment";
 
       return stream;
     } catch (error) {
-      this.log("error", `Failed to get user media: ${error}`);
-      throw error;
+      this.log("error", `getUserMedia failed: ${error}`);
+
+      // Provide specific error messages
+      if (error && typeof error === "object" && "name" in error) {
+        const err = error as { name?: string; message?: string };
+        if (err.name === "NotAllowedError") {
+          throw new Error(
+            "Quyền microphone/camera bị từ chối. Vui lòng cấp quyền và thử lại."
+          );
+        } else if (err.name === "NotFoundError") {
+          throw new Error(
+            "Không tìm thấy microphone/camera. Kiểm tra thiết bị của bạn."
+          );
+        } else if (err.name === "NotReadableError") {
+          throw new Error(
+            "Microphone/camera đang được sử dụng bởi ứng dụng khác."
+          );
+        } else {
+          throw new Error(`Lỗi truy cập media: ${err.message}`);
+        }
+      } else {
+        throw new Error(`Lỗi truy cập media: ${error}`);
+      }
     }
   }
-
   /**
    * Start a voice call
    */
@@ -716,13 +823,16 @@ export class VoiceCallService {
         this.peerConnection!.addTrack(track, this.localStream!);
       });
 
-      await this.peerConnection!.setRemoteDescription(actualCallData.sdpOffer!);
+      if (!actualCallData.sdpOffer || !actualCallData.sdpOffer.sdp) {
+        throw new Error("Invalid SDP offer: missing sdp");
+      }
+      await this.peerConnection!.setRemoteDescription({
+        type: actualCallData.sdpOffer.type,
+        sdp: actualCallData.sdpOffer.sdp,
+      });
       await this.flushRemoteIceCandidateQueue();
 
-      const answer = await this.peerConnection!.createAnswer({
-        offerToReceiveAudio: true,
-        offerToReceiveVideo: this.isVideoCall,
-      });
+      const answer = await this.peerConnection!.createAnswer();
 
       await this.peerConnection!.setLocalDescription(answer);
 
@@ -963,7 +1073,7 @@ export class VoiceCallService {
 
     this.peerConnection = new RTCPeerConnection(this.config);
 
-    this.peerConnection.ontrack = (event: RTCTrackEvent) => {
+    (this.peerConnection as any).ontrack = (event: any) => {
       if (!this.peerConnection) {
         return;
       }
@@ -975,7 +1085,7 @@ export class VoiceCallService {
       }
     };
 
-    this.peerConnection.onicecandidate = (event) => {
+    (this.peerConnection as any).onicecandidate = (event: any) => {
       if (!this.peerConnection) {
         return;
       }
@@ -991,7 +1101,7 @@ export class VoiceCallService {
       }
     };
 
-    this.peerConnection.oniceconnectionstatechange = () => {
+    (this.peerConnection as any).oniceconnectionstatechange = () => {
       if (!this.peerConnection) {
         return;
       }
@@ -1036,9 +1146,18 @@ export class VoiceCallService {
     if (!this.isInitiator || this.currentCallId !== data.callId) return;
 
     try {
+      if (this.callState !== "idle") {
+        this.cleanup();
+      }
       this.callState = "active";
       if (data.sdpAnswer && this.peerConnection) {
-        await this.peerConnection.setRemoteDescription(data.sdpAnswer);
+        if (!data.sdpAnswer.sdp) {
+          throw new Error("Invalid SDP answer: missing sdp");
+        }
+        await this.peerConnection.setRemoteDescription({
+          type: data.sdpAnswer.type,
+          sdp: data.sdpAnswer.sdp,
+        });
         await this.flushRemoteIceCandidateQueue();
       }
       this.updateDebugInfo();
@@ -1063,14 +1182,14 @@ export class VoiceCallService {
     if (this.currentCallId === data.callId) {
       this.log("warning", `Call declined by user`);
 
-      // First update state
+      // Update state first
       this.callState = "ended";
       this.notifyStateChange();
 
-      // Then cleanup
+      // Cleanup resources
       this.cleanup();
 
-      // Finally notify
+      // Notify call ended
       if (this.onCallEnded) {
         this.onCallEnded();
       }

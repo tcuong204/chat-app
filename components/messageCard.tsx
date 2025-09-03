@@ -161,9 +161,9 @@ const MessageCard: React.FC<MessageCardProps> = ({
           }
         }}
         className={`flex-row items-center px-6 py-4 border-b ${
-          !chat.isRead || chat.isRead == undefined
-            ? "bg-gray-100"
-            : "border-gray-500"
+          chat.isRead || chat.lastMessage === ""
+            ? "border-gray-500"
+            : "bg-gray-100"
         } `}
       >
         <View className="relative ">

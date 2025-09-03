@@ -7,12 +7,13 @@ import {
 } from "@/api/messageApi";
 import { uploadFile } from "@/api/uploadFile";
 import AudioPlayer from "@/components/audioPlayer";
+import usePDFViewer from "@/components/PDFViewer";
 import { images } from "@/constants/images";
 import { LOCALIP } from "@/constants/localIp";
 import { default as TypingDots } from "@/utils/AnimatedTypingDots";
 import AuthenticatedMediaViewer from "@/utils/authenticatedImage";
 import { showError, showSuccess } from "@/utils/customToast";
-import { openOfficeFile } from "@/utils/openOfficeFile";
+import { replaceLocalhost } from "@/utils/openOfficeFile";
 import { getAccount } from "@/utils/secureStore";
 import { socketManager } from "@/utils/socket";
 import { voiceCallService } from "@/utils/voiceCallService";
@@ -135,6 +136,18 @@ const MessageScreen = () => {
   const [message, setMessage] = useState("");
   const params = useLocalSearchParams();
   const conversationId = params.id as string;
+  const { openFile, PDFPreviewComponent } = usePDFViewer();
+
+  const handleFilePress = (
+    downloadUrl: string | undefined,
+    fileName: string | undefined
+  ) => {
+    const url = replaceLocalhost(downloadUrl);
+    console.log("Safe URL for PDF:", url);
+    openFile(url, fileName, true);
+  };
+  console.log(messages);
+
   const getPeerUserId = useCallback(() => {
     if (!conversations || !currentUserId) return null;
     const peer = conversations.participants.find(
@@ -158,7 +171,7 @@ const MessageScreen = () => {
     const uid = (account as any)?.user?.id;
     if (!token || !uid) throw new Error("Missing auth");
     if (!voiceCallService.isConnected) {
-      await voiceCallService.connect(`https://${LOCALIP}`, uid, token);
+      await voiceCallService.connect(`${LOCALIP}`, uid, token);
     }
   }, []);
 
@@ -591,6 +604,7 @@ const MessageScreen = () => {
   ) => {
     try {
       setUploading(true);
+      console.log("uri", uri);
 
       const response = await uploadFile(uri);
       console.log("[upload] response:", response);
@@ -628,6 +642,8 @@ const MessageScreen = () => {
           dimensions: response.dimensions,
         },
       };
+      console.log("hahah", messageData);
+
       // Send via socket
       if (socketManager.isSocketConnected()) {
         socketManager.quickShareFile(messageData);
@@ -1440,12 +1456,16 @@ const MessageScreen = () => {
         const isVideo = attachment?.mimeType?.startsWith("video");
         const isAudio = attachment?.mimeType?.startsWith("audio");
         const type = isImage ? "image" : "video";
+        const isPDF =
+          attachment?.fileName?.toLowerCase().endsWith(".pdf") ||
+          attachment?.mimeType?.includes("pdf");
         return (
           <View className="flex space-y-2">
             {isImage || (isVideo && attachment?.downloadUrl) ? (
               <AuthenticatedMediaViewer
                 mediaUrl={attachment && attachment.downloadUrl}
                 mediaType={type}
+                mediaFile={attachment}
               />
             ) : isAudio && attachment?.downloadUrl ? (
               <AudioPlayer
@@ -1454,35 +1474,59 @@ const MessageScreen = () => {
                 isOwnMessage={isOwnMessage}
                 duration={attachment.duration}
               />
-            ) : (
-              <View className="flex flex-row items-center space-x-2 p-2 bg-white/20 rounded-lg">
-                <View className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
-                  {<AntDesign name="file1" size={16} color="white" />}
+            ) : isPDF ? (
+              // ✅ Sửa phần hiển thị PDF
+              <TouchableOpacity
+                onPress={() => {
+                  console.log("PDF URL:", attachment?.downloadUrl);
+                  console.log("PDF FileName:", attachment?.fileName);
+                  handleFilePress(
+                    attachment?.downloadUrl,
+                    attachment?.fileName
+                  );
+                }}
+                className="flex flex-1 flex-row items-center space-x-2 p-3 bg-white/20 rounded-lg"
+              >
+                <View className="w-10 h-10 bg-red-600 rounded-full flex items-center justify-center">
+                  <AntDesign name="pdffile1" size={16} color="white" />
                 </View>
-                <TouchableOpacity
-                  className=""
-                  onPress={() =>
-                    openOfficeFile(
-                      attachment?.downloadUrl,
-                      attachment?.fileName
-                    )
-                  }
-                >
+                <View className="flex-1">
                   <Text
-                    className={`font-medium text-sm p-2 ${
+                    className={`font-medium ${
                       isOwnMessage ? "text-white" : "text-gray-800"
                     }`}
                   >
-                    {attachment?.fileName || "Tệp đính kèm"}
+                    {attachment?.fileName || "Tệp PDF"}
                   </Text>
                   <Text
                     className={`text-xs opacity-70 ${
                       isOwnMessage ? "text-white" : "text-gray-600"
                     }`}
                   >
-                    {attachment?.fileSize
-                      ? `${(attachment.fileSize / 1024 / 1024).toFixed(2)} MB`
-                      : "File"}
+                    Nhấn để xem PDF
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ) : (
+              // File khác (không phải PDF)
+              <View className="flex flex-row items-center space-x-2 p-2 bg-white/20 rounded-lg">
+                <View className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
+                  <AntDesign name="file1" size={16} color="white" />
+                </View>
+                <TouchableOpacity
+                  onPress={() =>
+                    handleFilePress(
+                      attachment?.downloadUrl,
+                      attachment?.fileName
+                    )
+                  }
+                >
+                  <Text
+                    className={`font-medium ${
+                      isOwnMessage ? "text-white" : "text-gray-800"
+                    }`}
+                  >
+                    {attachment?.fileName || "Tệp đính kèm"}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -1897,6 +1941,7 @@ const MessageScreen = () => {
               </View>
             </View>
           </View>
+          <PDFPreviewComponent />
         </KeyboardAvoidingView>
       </SafeAreaView>
     </SafeAreaProvider>

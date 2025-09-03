@@ -1,8 +1,15 @@
+import { LOCALIP } from "@/constants/localIp";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
 
-const replaceLocalhost = (url: string | undefined) => {
-  return url?.replace("localhost:3000", "192.168.0.102:3000");
+export const replaceLocalhost = (url: string | undefined) => {
+  if (!url) return url;
+  return (
+    url
+      // .replace("http://", "https://")
+      .replace("download", "preview") // đổi http thành https
+      .replace("http://localhost:3000", LOCALIP)
+  ); // thay localhost:3000 thành LOCALIP
 };
 
 export const openOfficeFile = async (

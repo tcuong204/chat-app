@@ -1,3 +1,4 @@
+import { images } from "@/constants/images";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useRouter } from "expo-router";
@@ -5,6 +6,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
   Animated,
+  Image,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -20,6 +22,7 @@ interface VoiceCallInterfaceProps {
   onEndCall: () => void;
   isIncoming?: boolean;
   isVideo?: boolean;
+  callerAvatar: string;
 }
 
 export const VoiceCallInterface: React.FC<VoiceCallInterfaceProps> = ({
@@ -28,6 +31,7 @@ export const VoiceCallInterface: React.FC<VoiceCallInterfaceProps> = ({
   onEndCall,
   isIncoming = false,
   isVideo = false,
+  callerAvatar,
 }) => {
   const router = useRouter();
   // Add video-specific state
@@ -106,43 +110,63 @@ export const VoiceCallInterface: React.FC<VoiceCallInterfaceProps> = ({
     try {
       setIsConnecting(true);
 
-      // Set up call state and error handlers
+      // Set up call state handler TRƯỚC khi bắt đầu cuộc gọi
       voiceCallService.onCallStateChanged = (state) => {
+        console.log("Call state changed:", state);
         if (state.state === "active") {
           setCallState("active");
         } else if (state.state === "ended") {
           setCallState("ended");
+          // Đảm bảo cleanup và quay lại
           setTimeout(() => {
             onEndCall();
-            router.back(); // Return to messages screen when call ends
+            router.back();
           }, 1000);
         }
+      };
+
+      // Set up call ended handler
+      voiceCallService.onCallEnded = () => {
+        console.log("Call ended event triggered");
+        setCallState("ended");
+        setTimeout(() => {
+          onEndCall();
+          router.back();
+        }, 1000);
       };
 
       voiceCallService.onError = (error) => {
         Alert.alert("Lỗi cuộc gọi", error.message);
         onEndCall();
+        router.back(); // Thêm router.back() ở đây
       };
 
+      // Bắt đầu cuộc gọi
       if (isVideo) {
-        // Start video call with proper facing mode
         await voiceCallService.startVideoCall(
           targetUserId,
           isFrontCamera ? "front" : "back"
         );
       } else {
-        // Start voice call
         await voiceCallService.startCall(targetUserId);
       }
       setCallState("ringing");
     } catch (error) {
       Alert.alert("Lỗi", "Không thể thực hiện cuộc gọi. Vui lòng thử lại.");
       onEndCall();
+      router.back(); // Thêm router.back() ở đây
     } finally {
       setIsConnecting(false);
     }
   };
-
+  useEffect(() => {
+    // Cleanup khi component unmount
+    return () => {
+      voiceCallService.onCallStateChanged = null;
+      voiceCallService.onCallEnded = null;
+      voiceCallService.onError = null;
+    };
+  }, []);
   const answerCall = async () => {
     try {
       setCallState("active");
@@ -334,16 +358,12 @@ export const VoiceCallInterface: React.FC<VoiceCallInterfaceProps> = ({
             {/* Profile Picture and Call Info - Only show when no remote video */}
             {(!isVideo || !remoteStream || !isRemoteVideoEnabled) && (
               <View style={styles.profileSection}>
-                <Animated.View
-                  style={[
-                    styles.profilePicture,
-                    { transform: [{ scale: pulseAnim }] },
-                  ]}
-                >
-                  <Text style={styles.profileInitial}>
-                    {targetUserName.charAt(0).toUpperCase()}
-                  </Text>
-                </Animated.View>
+                <Image
+                  source={
+                    callerAvatar ? { uri: callerAvatar } : images.defaultAvatar
+                  }
+                  className="w-28 h-28 rounded-full mr-3"
+                />
 
                 {/* Call Status */}
                 <View style={styles.callStatusContainer}>

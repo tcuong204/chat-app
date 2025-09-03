@@ -4,7 +4,7 @@ import { VoiceCallInterface } from "../components/VoiceCallInterface";
 import { voiceCallService } from "../utils/voiceCallService";
 
 export default function VoiceCallPage() {
-  const { targetUserId, targetUserName, isIncoming, callType } =
+  const { targetUserId, targetUserName, isIncoming, callType, callerAvatar } =
     useLocalSearchParams();
 
   const handleEndCall = () => {
@@ -19,6 +19,7 @@ export default function VoiceCallPage() {
 
   return (
     <VoiceCallInterface
+      callerAvatar={callerAvatar}
       targetUserId={targetUserId as string}
       targetUserName={targetUserName as string}
       onEndCall={handleEndCall}
