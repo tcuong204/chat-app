@@ -722,6 +722,8 @@ export class VoiceCallService {
       this.localStream!.getTracks().forEach((track) => {
         this.peerConnection!.addTrack(track, this.localStream!);
       });
+      // Đảm bảo mở mic khi bắt đầu cuộc gọi
+      this.setMuted(false);
 
       const offer = await this.peerConnection!.createOffer({
         offerToReceiveAudio: true,
@@ -772,6 +774,8 @@ export class VoiceCallService {
       this.localStream!.getTracks().forEach((track) => {
         this.peerConnection!.addTrack(track, this.localStream!);
       });
+      // Đảm bảo mở mic khi bắt đầu cuộc gọi video
+      this.setMuted(false);
 
       const offer = await this.peerConnection!.createOffer({
         offerToReceiveAudio: true,
@@ -822,6 +826,8 @@ export class VoiceCallService {
       this.localStream!.getTracks().forEach((track) => {
         this.peerConnection!.addTrack(track, this.localStream!);
       });
+      // Đảm bảo mở mic khi trả lời cuộc gọi
+      this.setMuted(false);
 
       if (!actualCallData.sdpOffer || !actualCallData.sdpOffer.sdp) {
         throw new Error("Invalid SDP offer: missing sdp");
@@ -895,6 +901,16 @@ export class VoiceCallService {
 
     this.log("info", `Audio ${this.isMuted ? "muted" : "unmuted"}`);
     return this.isMuted;
+  }
+
+  // Bật/tắt micro theo trạng thái mong muốn
+  public setMuted(muted: boolean): void {
+    this.isMuted = muted;
+    if (this.localStream) {
+      this.localStream.getAudioTracks().forEach((track) => {
+        track.enabled = !muted;
+      });
+    }
   }
 
   /**
