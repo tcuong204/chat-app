@@ -570,102 +570,98 @@ export class VoiceCallService {
       throw error;
     }
   }
+  public debugAudioState(): void {
+    if (!this.localStream) {
+      console.log("🎤 Không có local stream");
+      return;
+    }
+
+    const audioTracks = this.localStream.getAudioTracks();
+    console.log(`🎤 Số lượng audio tracks: ${audioTracks.length}`);
+
+    audioTracks.forEach((track, index) => {
+      console.log(`🎤 Track ${index}:`, {
+        id: track.id,
+        label: track.label,
+        enabled: track.enabled,
+        muted: track.muted,
+        readyState: track.readyState,
+        kind: track.kind,
+      });
+    });
+
+    if (this.peerConnection) {
+      const senders = this.peerConnection.getSenders();
+      console.log(`📡 Số lượng RTC Senders: ${senders.length}`);
+
+      senders.forEach((sender, index) => {
+        if (sender.track) {
+          console.log(`📡 Sender ${index}:`, {
+            kind: sender.track.kind,
+            enabled: sender.track.enabled,
+            readyState: sender.track.readyState,
+          });
+        }
+      });
+    }
+  }
   private async getUserMedia(
     includeVideo: boolean = false,
     facingMode: "front" | "back" = "front"
   ): Promise<MediaStream> {
     try {
-      // Đảm bảo có quyền trước
       await this.ensurePermissions(includeVideo);
 
-      // Kiểm tra WebRTC availability
-      if (!mediaDevices || typeof mediaDevices.getUserMedia !== "function") {
-        throw new Error(
-          "WebRTC mediaDevices không khả dụng. Hãy đảm bảo bạn đang sử dụng development build."
-        );
-      }
-
-      const constraints: any = {
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: 44100, // Thêm sample rate cụ thể
-        },
-        video: false, // Mặc định là false
+      // Bắt đầu với constraints cơ bản, sau đó thử nâng cao
+      let constraints: any = {
+        audio: true, // Bắt đầu đơn giản
+        video: false,
       };
 
       if (includeVideo) {
         constraints.video = {
           facingMode: facingMode === "front" ? "user" : "environment",
-          width: { min: 640, ideal: 1280, max: 1920 },
-          height: { min: 480, ideal: 720, max: 1080 },
-          frameRate: { min: 15, ideal: 30, max: 30 },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30 },
         };
       }
 
-      this.log(
-        "info",
-        `Requesting media with constraints: ${JSON.stringify(constraints)}`
-      );
+      try {
+        const stream = await mediaDevices.getUserMedia(constraints);
+        this.localStream = stream;
+        return stream;
+      } catch (basicError) {
+        // Fallback về enhanced audio constraints
+        constraints.audio = {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        };
 
-      const stream = (await mediaDevices.getUserMedia(
-        constraints
-      )) as MediaStream;
-
-      // Kiểm tra stream có tracks không
-      const audioTracks = stream.getAudioTracks();
-      const videoTracks = stream.getVideoTracks();
-
-      this.log(
-        "info",
-        `Got stream with ${audioTracks.length} audio tracks, ${videoTracks.length} video tracks`
-      );
-
-      if (audioTracks.length === 0) {
-        throw new Error(
-          "Không thể truy cập microphone. Kiểm tra quyền và thiết bị."
-        );
+        const stream = await mediaDevices.getUserMedia(constraints);
+        this.localStream = stream;
+        return stream;
       }
-
-      // Log thông tin tracks
-      audioTracks.forEach((track, index) => {
-        this.log(
-          "info",
-          `Audio track ${index}: ${track.label}, enabled: ${track.enabled}, readyState: ${track.readyState}`
-        );
-      });
-
-      this.localStream = stream;
-      this.isVideoCall = includeVideo;
-      this.currentFacingMode = facingMode === "front" ? "user" : "environment";
-
-      return stream;
     } catch (error) {
       this.log("error", `getUserMedia failed: ${error}`);
-
-      // Provide specific error messages
-      if (error && typeof error === "object" && "name" in error) {
-        const err = error as { name?: string; message?: string };
-        if (err.name === "NotAllowedError") {
-          throw new Error(
-            "Quyền microphone/camera bị từ chối. Vui lòng cấp quyền và thử lại."
-          );
-        } else if (err.name === "NotFoundError") {
-          throw new Error(
-            "Không tìm thấy microphone/camera. Kiểm tra thiết bị của bạn."
-          );
-        } else if (err.name === "NotReadableError") {
-          throw new Error(
-            "Microphone/camera đang được sử dụng bởi ứng dụng khác."
-          );
-        } else {
-          throw new Error(`Lỗi truy cập media: ${err.message}`);
-        }
-      } else {
-        throw new Error(`Lỗi truy cập media: ${error}`);
-      }
+      throw error;
     }
+  }
+  private async ensureAudioTracksEnabled(): Promise<void> {
+    if (!this.localStream) return;
+
+    // Chờ một chút để tracks sẵn sàng
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const audioTracks = this.localStream.getAudioTracks();
+    audioTracks.forEach((track, index) => {
+      this.log(
+        "info",
+        `Audio track ${index}: enabled=${track.enabled}, readyState=${track.readyState}`
+      );
+      track.enabled = !this.isMuted;
+    });
   }
   /**
    * Start a voice call
@@ -675,7 +671,12 @@ export class VoiceCallService {
       if (!this.isConnected) {
         throw new Error("Not connected to server");
       }
+      await this.getUserMedia();
+      this.createPeerConnection();
 
+      this.localStream!.getTracks().forEach((track) => {
+        this.peerConnection!.addTrack(track, this.localStream!);
+      });
       if (this.callState !== "idle") {
         throw new Error("Already in a call");
       }
@@ -687,7 +688,8 @@ export class VoiceCallService {
             "Please run 'npx expo run:android' instead of 'npx expo start'."
         );
       }
-
+      this.isMuted = false;
+      await this.ensureAudioTracksEnabled();
       // Ensure WebRTC is available
       if (typeof RTCPeerConnection === "undefined") {
         const status = this.getWebRTCStatus();
