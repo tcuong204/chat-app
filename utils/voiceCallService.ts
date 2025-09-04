@@ -633,6 +633,7 @@ export class VoiceCallService {
             "Please run 'npx expo run:android' instead of 'npx expo start'."
         );
       }
+      this.debugAudioState();
       this.isMuted = false;
       await this.ensureAudioTracksEnabled();
       // Ensure WebRTC is available
@@ -764,12 +765,13 @@ export class VoiceCallService {
       if (!this.socket || !this.isConnected) {
         throw new Error("Socket not connected. Cannot answer call.");
       }
+      await this.getUserMedia(this.isVideoCall);
+      console.log("answer");
+      this.debugAudioState();
 
       this.log("info", `Answering call: ${actualCallData.callId}`);
       this.callState = "connecting";
       this.notifyStateChange();
-
-      await this.getUserMedia(this.isVideoCall);
 
       if (!this.peerConnection) {
         this.createPeerConnection();

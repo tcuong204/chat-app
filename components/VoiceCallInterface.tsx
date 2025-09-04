@@ -418,6 +418,12 @@ export const VoiceCallInterface: React.FC<VoiceCallInterfaceProps> = ({
                 className="flex flex-row items-center  rounded-xl justify-between w-[90%]"
                 style={{ backgroundColor: "#3D3D3A" }}
               >
+                {!isVideo && remoteStream && (
+                  <RTCView
+                    streamURL={remoteStream.toURL()}
+                    style={{ width: 0, height: 0 }} // ẩn đi
+                  />
+                )}
                 <TouchableOpacity
                   style={styles.controlButton}
                   onPress={endCall}
