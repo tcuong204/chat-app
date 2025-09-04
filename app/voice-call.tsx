@@ -4,8 +4,14 @@ import { VoiceCallInterface } from "../components/VoiceCallInterface";
 import { voiceCallService } from "../utils/voiceCallService";
 
 export default function VoiceCallPage() {
-  const { targetUserId, targetUserName, isIncoming, callType, callerAvatar } =
-    useLocalSearchParams();
+  const {
+    targetUserId,
+    targetUserName,
+    isIncoming,
+    callType,
+    callerAvatar,
+    conversationId,
+  } = useLocalSearchParams();
 
   const handleEndCall = () => {
     try {
@@ -19,12 +25,13 @@ export default function VoiceCallPage() {
 
   return (
     <VoiceCallInterface
-      callerAvatar={callerAvatar}
+      callerAvatar={callerAvatar as string}
       targetUserId={targetUserId as string}
       targetUserName={targetUserName as string}
       onEndCall={handleEndCall}
       isIncoming={isIncoming === "true"}
       isVideo={callType === "video" ? true : false}
+      conversationId={conversationId as string}
     />
   );
 }

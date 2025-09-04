@@ -142,9 +142,10 @@ const MessageScreen = () => {
     downloadUrl: string | undefined,
     fileName: string | undefined
   ) => {
+    if (!downloadUrl) return;
     const url = replaceLocalhost(downloadUrl);
     console.log("Safe URL for PDF:", url);
-    openFile(url, fileName, true);
+    openFile(url, fileName || "Tệp PDF");
   };
   console.log(messages);
 
@@ -189,6 +190,7 @@ const MessageScreen = () => {
           targetUserId: peerUserId,
           targetUserName: getPeerUserName() || "Người dùng",
           isIncoming: "false",
+          conversationId: conversationId,
         },
       });
     } catch (e) {
@@ -247,6 +249,7 @@ const MessageScreen = () => {
           targetUserName: peerName || "Người dùng",
           isIncoming: "false",
           callType: "video", // Add flag to indicate video call
+          conversationId: conversationId,
         },
       });
     } catch (error) {
@@ -1465,7 +1468,9 @@ const MessageScreen = () => {
               <AuthenticatedMediaViewer
                 mediaUrl={attachment && attachment.downloadUrl}
                 mediaType={type}
-                mediaFile={attachment}
+                mediaFile={
+                  attachment?.downloadUrl ? (attachment as any) : undefined
+                }
               />
             ) : isAudio && attachment?.downloadUrl ? (
               <AudioPlayer

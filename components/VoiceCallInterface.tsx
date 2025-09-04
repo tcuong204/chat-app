@@ -22,7 +22,8 @@ interface VoiceCallInterfaceProps {
   onEndCall: () => void;
   isIncoming?: boolean;
   isVideo?: boolean;
-  callerAvatar: string;
+  callerAvatar?: string;
+  conversationId?: string;
 }
 
 export const VoiceCallInterface: React.FC<VoiceCallInterfaceProps> = ({

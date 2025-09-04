@@ -53,6 +53,7 @@ export default function RootLayout() {
                 isIncoming: "true",
                 callerAvatar: callData.callerAvatar,
                 callType: callData.callType,
+                conversationId: callData.conversationId,
               },
             });
           };
