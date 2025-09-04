@@ -139,24 +139,8 @@ export const VoiceCallInterface: React.FC<VoiceCallInterfaceProps> = ({
       voiceCallService.onError = (error) => {
         Alert.alert("Lỗi cuộc gọi", error.message);
         onEndCall();
-        router.back();
+        router.back(); // Thêm router.back() ở đây
       };
-
-      // Test microphone trước khi bắt đầu cuộc gọi
-      try {
-        console.log("Testing microphone before call...");
-        await voiceCallService.testWebRTCMicrophone();
-        console.log("Microphone test passed");
-      } catch (micError) {
-        console.error("Microphone test failed:", micError);
-        Alert.alert(
-          "Lỗi Microphone",
-          "Không thể truy cập microphone. Vui lòng kiểm tra quyền và thử lại."
-        );
-        onEndCall();
-        router.back();
-        return;
-      }
 
       // Bắt đầu cuộc gọi
       if (isVideo) {
@@ -169,15 +153,9 @@ export const VoiceCallInterface: React.FC<VoiceCallInterfaceProps> = ({
       }
       setCallState("ringing");
     } catch (error) {
-      console.error("Start call error:", error);
-      Alert.alert(
-        "Lỗi",
-        `Không thể thực hiện cuộc gọi: ${
-          error instanceof Error ? error.message : "Vui lòng thử lại."
-        }`
-      );
+      Alert.alert("Lỗi", "Không thể thực hiện cuộc gọi. Vui lòng thử lại.");
       onEndCall();
-      router.back();
+      router.back(); // Thêm router.back() ở đây
     } finally {
       setIsConnecting(false);
     }
@@ -192,25 +170,8 @@ export const VoiceCallInterface: React.FC<VoiceCallInterfaceProps> = ({
   }, []);
   const answerCall = async () => {
     try {
-      setCallState("connecting");
-
-      // Test microphone trước khi trả lời cuộc gọi
-      try {
-        console.log("Testing microphone before answering call...");
-        await voiceCallService.testWebRTCMicrophone();
-        console.log("Microphone test passed");
-      } catch (micError) {
-        console.error("Microphone test failed:", micError);
-        Alert.alert(
-          "Lỗi Microphone",
-          "Không thể truy cập microphone. Vui lòng kiểm tra quyền và thử lại."
-        );
-        onEndCall();
-        return;
-      }
-
-      await voiceCallService.answerCall();
       setCallState("active");
+      await voiceCallService.answerCall();
 
       // Listen for call state changes
       voiceCallService.onCallStateChanged = (state) => {
@@ -220,13 +181,7 @@ export const VoiceCallInterface: React.FC<VoiceCallInterfaceProps> = ({
         }
       };
     } catch (error) {
-      console.error("Answer call error:", error);
-      Alert.alert(
-        "Lỗi",
-        `Không thể trả lời cuộc gọi: ${
-          error instanceof Error ? error.message : "Vui lòng thử lại."
-        }`
-      );
+      Alert.alert("Lỗi", "Không thể trả lời cuộc gọi.");
       onEndCall();
     }
   };

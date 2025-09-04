@@ -471,60 +471,6 @@ export class VoiceCallService {
   }
 
   /**
-   * Test WebRTC microphone access
-   */
-  async testWebRTCMicrophone(): Promise<boolean> {
-    try {
-      this.log("info", "Testing WebRTC microphone access...");
-
-      // Ensure WebRTC is ready
-      if (!this.isWebRTCReady()) {
-        throw new Error("WebRTC is not ready");
-      }
-
-      // Test getUserMedia with audio only
-      const constraints: any = {
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      };
-
-      const stream = await mediaDevices.getUserMedia(constraints);
-
-      if (!stream) {
-        throw new Error("Failed to get media stream");
-      }
-
-      const audioTracks = stream.getAudioTracks();
-      if (audioTracks.length === 0) {
-        throw new Error("No audio tracks found");
-      }
-
-      // Test each audio track
-      audioTracks.forEach((track, index) => {
-        this.log(
-          "info",
-          `Audio track ${index}: enabled=${track.enabled}, readyState=${track.readyState}`
-        );
-        if (track.readyState !== "live") {
-          throw new Error(`Audio track ${index} is not live`);
-        }
-      });
-
-      // Clean up test stream
-      stream.getTracks().forEach((track) => track.stop());
-
-      this.log("success", "WebRTC microphone test completed successfully");
-      return true;
-    } catch (error) {
-      this.log("error", `WebRTC microphone test failed: ${error}`);
-      throw error;
-    }
-  }
-
-  /**
    * Get user media with Expo camera/audio
    */
   private async ensurePermissions(
@@ -608,166 +554,74 @@ export class VoiceCallService {
     facingMode: "front" | "back" = "front"
   ): Promise<MediaStream> {
     try {
-      // Chỉ gọi ensurePermissions một lần
       await this.ensurePermissions(includeVideo);
 
-      this.log(
-        "info",
-        `Requesting media stream - Video: ${includeVideo}, Facing: ${facingMode}`
-      );
+      // Bắt đầu với constraints cơ bản, sau đó thử nâng cao
+      await this.ensurePermissions(includeVideo);
 
-      // Bắt đầu với constraints cơ bản
-      const basicConstraints: any = {
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: 44100,
-        },
+      const constraints: any = {
+        audio: true, // Luôn bật audio
       };
 
       if (includeVideo) {
-        basicConstraints.video = {
+        constraints.video = {
           facingMode: facingMode === "front" ? "user" : "environment",
-          width: { ideal: 1280, min: 640 },
-          height: { ideal: 720, min: 480 },
-          frameRate: { ideal: 30, min: 15 },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30 },
         };
       }
 
       try {
-        this.log(
-          "info",
-          "Attempting to get media stream with basic constraints"
-        );
-        const stream = await mediaDevices.getUserMedia(basicConstraints);
-
-        // Validate stream
-        if (!stream) {
-          throw new Error("Failed to get media stream - stream is null");
-        }
-
-        // Check audio tracks
-        const audioTracks = stream.getAudioTracks();
-        if (audioTracks.length === 0) {
-          throw new Error("No audio tracks found in stream");
-        }
-
-        // Ensure audio tracks are enabled
-        audioTracks.forEach((track, index) => {
-          this.log(
-            "info",
-            `Audio track ${index}: enabled=${track.enabled}, readyState=${track.readyState}`
-          );
-          track.enabled = true; // Ensure track is enabled
-        });
-
+        const stream = await mediaDevices.getUserMedia(constraints);
         this.localStream = stream;
-        this.log(
-          "success",
-          `Media stream obtained successfully - Audio tracks: ${
-            audioTracks.length
-          }, Video tracks: ${stream.getVideoTracks().length}`
-        );
-
         return stream;
       } catch (basicError) {
-        this.log(
-          "warning",
-          `Basic constraints failed: ${basicError}, trying fallback constraints`
-        );
-
-        // Fallback với constraints đơn giản hơn
-        const fallbackConstraints: any = {
-          audio: true, // Minimal audio constraint
+        // Fallback về enhanced audio constraints
+        constraints.audio = {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
         };
 
-        if (includeVideo) {
-          fallbackConstraints.video = {
-            facingMode: facingMode === "front" ? "user" : "environment",
-          };
-        }
-
-        const stream = await mediaDevices.getUserMedia(fallbackConstraints);
-
-        if (!stream) {
-          throw new Error(
-            "Failed to get media stream with fallback constraints"
-          );
-        }
-
-        // Validate fallback stream
-        const audioTracks = stream.getAudioTracks();
-        if (audioTracks.length === 0) {
-          throw new Error("No audio tracks found in fallback stream");
-        }
-
-        // Ensure audio tracks are enabled
-        audioTracks.forEach((track) => {
-          track.enabled = true;
-        });
-
+        const stream = await mediaDevices.getUserMedia(constraints);
         this.localStream = stream;
-        this.log("success", `Fallback media stream obtained successfully`);
-
         return stream;
       }
     } catch (error) {
-      this.log("error", `getUserMedia completely failed: ${error}`);
-      throw new Error(
-        `Microphone access failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
+      this.log("error", `getUserMedia failed: ${error}`);
+      throw error;
     }
   }
   private async ensureAudioTracksEnabled(): Promise<void> {
-    if (!this.localStream) {
-      this.log("warning", "No local stream available to enable audio tracks");
-      return;
-    }
+    if (!this.localStream) return;
 
     // Chờ một chút để tracks sẵn sàng
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     const audioTracks = this.localStream.getAudioTracks();
-    this.log("info", `Found ${audioTracks.length} audio tracks to configure`);
-
-    if (audioTracks.length === 0) {
-      this.log("error", "No audio tracks found in local stream");
-      throw new Error("No audio tracks available");
-    }
-
     audioTracks.forEach((track, index) => {
       this.log(
         "info",
-        `Audio track ${index}: enabled=${track.enabled}, readyState=${track.readyState}, muted=${track.muted}`
+        `Audio track ${index}: enabled=${track.enabled}, readyState=${track.readyState}`
       );
-
-      // Ensure track is enabled and not muted
       track.enabled = !this.isMuted;
-      // Note: muted property is read-only in some implementations
-
-      this.log(
-        "info",
-        `Audio track ${index} configured: enabled=${track.enabled}, muted=${track.muted}`
-      );
     });
-
-    this.log("success", "Audio tracks configuration completed");
   }
   /**
    * Start a voice call
    */
   async startCall(targetUserId: string): Promise<void> {
     try {
-      this.log("info", `Starting voice call to user: ${targetUserId}`);
-
-      // Validate prerequisites
       if (!this.isConnected) {
         throw new Error("Not connected to server");
       }
+      await this.getUserMedia();
+      this.createPeerConnection();
 
+      this.localStream!.getTracks().forEach((track) => {
+        this.peerConnection!.addTrack(track, this.localStream!);
+      });
       if (this.callState !== "idle") {
         throw new Error("Already in a call");
       }
@@ -779,7 +633,8 @@ export class VoiceCallService {
             "Please run 'npx expo run:android' instead of 'npx expo start'."
         );
       }
-
+      this.isMuted = false;
+      await this.ensureAudioTracksEnabled();
       // Ensure WebRTC is available
       if (typeof RTCPeerConnection === "undefined") {
         const status = this.getWebRTCStatus();
@@ -804,31 +659,19 @@ export class VoiceCallService {
         );
       }
 
-      // Set call state
+      this.log("info", `Starting voice call to user: ${targetUserId}`);
       this.callState = "initiating";
       this.isInitiator = true;
-      this.isMuted = false;
 
-      // Get user media (microphone)
-      this.log("info", "Requesting microphone access...");
-      await this.getUserMedia(false); // Voice call only
-
-      // Ensure audio tracks are properly configured
-      await this.ensureAudioTracksEnabled();
-
-      // Create peer connection
-      this.log("info", "Creating peer connection...");
+      await this.getUserMedia();
       this.createPeerConnection();
 
-      // Add tracks to peer connection
-      this.log("info", "Adding tracks to peer connection...");
       this.localStream!.getTracks().forEach((track) => {
-        this.log("info", `Adding ${track.kind} track to peer connection`);
         this.peerConnection!.addTrack(track, this.localStream!);
       });
+      // Đảm bảo mở mic khi bắt đầu cuộc gọi
+      this.setMuted(false);
 
-      // Create and send offer
-      this.log("info", "Creating SDP offer...");
       const offer = await this.peerConnection!.createOffer({
         offerToReceiveAudio: true,
         offerToReceiveVideo: false,
@@ -836,8 +679,6 @@ export class VoiceCallService {
 
       await this.peerConnection!.setLocalDescription(offer);
 
-      // Send call initiation to server
-      this.log("info", "Sending call initiation to server...");
       this.socket!.emit("call:initiate", {
         targetUserId: targetUserId,
         callType: "voice",
@@ -846,8 +687,6 @@ export class VoiceCallService {
 
       this.updateDebugInfo();
       this.notifyStateChange();
-
-      this.log("success", "Voice call initiated successfully");
     } catch (error) {
       this.log("error", `Failed to start call: ${error}`);
       this.cleanup();
@@ -930,44 +769,29 @@ export class VoiceCallService {
       this.callState = "connecting";
       this.notifyStateChange();
 
-      // Get user media (microphone + video if needed)
-      this.log("info", "Requesting media access for incoming call...");
       await this.getUserMedia(this.isVideoCall);
 
-      // Ensure audio tracks are properly configured
-      await this.ensureAudioTracksEnabled();
-
-      // Create peer connection if not exists
       if (!this.peerConnection) {
-        this.log("info", "Creating peer connection for incoming call...");
         this.createPeerConnection();
       }
 
-      // Add tracks to peer connection
-      this.log("info", "Adding tracks to peer connection...");
       this.localStream!.getTracks().forEach((track) => {
-        this.log("info", `Adding ${track.kind} track to peer connection`);
         this.peerConnection!.addTrack(track, this.localStream!);
       });
-
       // Đảm bảo mở mic khi trả lời cuộc gọi
       this.setMuted(false);
 
-      // Validate and set remote description
       if (!actualCallData.sdpOffer || !actualCallData.sdpOffer.sdp) {
         throw new Error("Invalid SDP offer: missing sdp");
       }
-
-      this.log("info", "Setting remote description...");
       await this.peerConnection!.setRemoteDescription({
         type: actualCallData.sdpOffer.type,
         sdp: actualCallData.sdpOffer.sdp,
       });
       await this.flushRemoteIceCandidateQueue();
 
-      // Create and send answer
-      this.log("info", "Creating SDP answer...");
       const answer = await this.peerConnection!.createAnswer();
+
       await this.peerConnection!.setLocalDescription(answer);
 
       // Kiểm tra socket lại trước khi emit
@@ -975,7 +799,6 @@ export class VoiceCallService {
         throw new Error("Socket disconnected during call setup");
       }
 
-      this.log("info", "Sending call accept to server...");
       this.socket.emit("call:accept", {
         callId: this.currentCallId,
         sdpAnswer: answer,
@@ -983,8 +806,6 @@ export class VoiceCallService {
 
       this.updateDebugInfo();
       this.notifyStateChange();
-
-      this.log("success", "Call answered successfully");
     } catch (error) {
       this.log("error", `Failed to answer call: ${error}`);
       // Chỉ decline nếu có currentCallId hợp lệ
