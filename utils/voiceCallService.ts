@@ -815,6 +815,11 @@ export class VoiceCallService {
         throw new Error("No incoming call to answer");
       }
 
+      // Kiểm tra socket connection trước khi answer
+      if (!this.socket || !this.isConnected) {
+        throw new Error("Socket not connected. Cannot answer call.");
+      }
+
       this.log("info", `Answering call: ${actualCallData.callId}`);
       this.callState = "connecting";
       this.notifyStateChange();
@@ -844,7 +849,12 @@ export class VoiceCallService {
 
       await this.peerConnection!.setLocalDescription(answer);
 
-      this.socket!.emit("call:accept", {
+      // Kiểm tra socket lại trước khi emit
+      if (!this.socket || !this.isConnected) {
+        throw new Error("Socket disconnected during call setup");
+      }
+
+      this.socket.emit("call:accept", {
         callId: this.currentCallId,
         sdpAnswer: answer,
       });
@@ -853,7 +863,10 @@ export class VoiceCallService {
       this.notifyStateChange();
     } catch (error) {
       this.log("error", `Failed to answer call: ${error}`);
-      this.declineCall(this.currentCallId!);
+      // Chỉ decline nếu có currentCallId hợp lệ
+      if (this.currentCallId) {
+        this.declineCall(this.currentCallId);
+      }
       throw error;
     }
   }
@@ -863,10 +876,14 @@ export class VoiceCallService {
    */
   declineCall(callId: string): void {
     this.log("info", `Declining call: ${callId}`);
-    this.socket!.emit("call:decline", {
-      callId: callId,
-      reason: "declined",
-    });
+    if (this.socket && this.isConnected) {
+      this.socket.emit("call:decline", {
+        callId: callId,
+        reason: "declined",
+      });
+    } else {
+      this.log("warning", "Socket not connected, cannot send decline signal");
+    }
     this.cleanup();
   }
 
@@ -880,10 +897,14 @@ export class VoiceCallService {
     }
 
     this.log("info", `Hanging up call: ${this.currentCallId}`);
-    this.socket!.emit("call:hangup", {
-      callId: this.currentCallId,
-      reason: "user_hangup",
-    });
+    if (this.socket && this.isConnected) {
+      this.socket.emit("call:hangup", {
+        callId: this.currentCallId,
+        reason: "user_hangup",
+      });
+    } else {
+      this.log("warning", "Socket not connected, cannot send hangup signal");
+    }
     this.cleanup();
   }
 

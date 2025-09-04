@@ -208,7 +208,7 @@ const MessageScreen = () => {
       const peerUserId = getPeerUserId();
       if (!peerUserId) {
         console.error("No peer user found for video call");
-        Alert.alert("Error", "Could not find user to call");
+        showError("Could not find user to call", "Error");
         return;
       }
 
