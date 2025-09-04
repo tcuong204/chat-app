@@ -270,7 +270,7 @@ export const VoiceCallInterface: React.FC<VoiceCallInterfaceProps> = ({
       setIsFrontCamera(!isFrontCamera);
     }
   };
-
+  console.log("rêrer", remoteStream);
   return (
     <SafeAreaProvider>
       <SafeAreaView

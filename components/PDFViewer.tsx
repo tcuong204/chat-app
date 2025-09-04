@@ -2,10 +2,11 @@ import { LOCALIP } from "@/constants/localIp";
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   Alert,
   Dimensions,
+  Linking,
   Modal,
   Platform,
   StyleSheet,
@@ -18,14 +19,15 @@ import { WebView } from "react-native-webview";
 const { width, height } = Dimensions.get("window");
 
 // Utilities
-const replaceLocalhost = (url: string): string => {
-  if (!url) return "";
+const replaceLocalhost = (url: string | undefined) => {
+  if (!url) return url;
   return url.replace("http://localhost:3000", LOCALIP);
 };
 const addNgrokSkipWarning = (url: string): string => {
   if (!url.includes("ngrok") && !url.includes("ngrok-free.app")) {
     return url;
   }
+
   const separator = url.includes("?") ? "&" : "?";
   return `${url}${separator}ngrok-skip-browser-warning=true`;
 };
@@ -50,51 +52,8 @@ const PDFPreviewModal: React.FC<PDFPreviewModalProps> = ({
 }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [localUri, setLocalUri] = useState<string | null>(null);
-
-  // Download PDF về local khi modal hiển thị
-  useEffect(() => {
-    const downloadPdf = async () => {
-      try {
-        setLoading(true);
-        setError(false);
-        if (!fileUri) throw new Error("No fileUri provided");
-        // Đảm bảo tên file không trùng, nếu có fileId thì nên dùng
-        const safeFileName = fileName || "document.pdf";
-        const downloadPath = `${FileSystem.documentDirectory}${safeFileName}`;
-        // Kiểm tra file đã tồn tại chưa
-        const fileInfo = await FileSystem.getInfoAsync(downloadPath);
-        if (fileInfo.exists) {
-          setLocalUri(downloadPath);
-          setLoading(false);
-          return;
-        }
-        // Nếu chưa có thì tải về
-        const safeFileUri = addNgrokSkipWarning(
-          replaceLocalhost(fileUri || "")
-        );
-        const downloadResumable = FileSystem.createDownloadResumable(
-          safeFileUri,
-          downloadPath,
-          { headers: { "ngrok-skip-browser-warning": "true" } }
-        );
-        const result = await downloadResumable.downloadAsync();
-        if (result?.uri) {
-          setLocalUri(result.uri);
-        } else {
-          throw new Error("Download failed");
-        }
-      } catch (error) {
-        setError(true);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (visible) {
-      downloadPdf();
-    }
-  }, [visible, fileUri, fileName]);
+  const [webViewUrl, setWebViewUrl] = useState(fileUri); // Bắt đầu với ngrok URL
+  const webViewRef = React.useRef<WebView>(null);
 
   const handleError = () => {
     setError(true);
@@ -108,13 +67,39 @@ const PDFPreviewModal: React.FC<PDFPreviewModalProps> = ({
           text: "Mở bằng ứng dụng khác",
           onPress: async () => {
             if (await Sharing.isAvailableAsync()) {
-              await Sharing.shareAsync(localUri || fileUri);
+              await Sharing.shareAsync(fileUri);
             }
             onClose();
           },
         },
       ]
     );
+  };
+
+  // Thêm parameter skip cho ngrok
+  const safeFileUri = addNgrokSkipWarning(fileUri);
+
+  // Google Viewer URL
+  const googleViewerUrl = `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(
+    safeFileUri
+  )}`;
+
+  // Kiểm tra warning page
+  const isNgrokWarningPage = (url: string) => {
+    return url.includes("ngrok") && url.includes("only-valid-for-one-request");
+  };
+
+  // Xử lý download không mong muốn
+  const handleShouldStartLoadWithRequest = (event: any) => {
+    const { url, headers } = event;
+    // Nếu server trả về Content-Disposition: attachment, chặn download
+    if (headers && headers["Content-Disposition"]?.includes("attachment")) {
+      console.log("Blocked auto-download for URL:", url);
+      // Force load inline
+      setWebViewUrl(googleViewerUrl);
+      return false; // Chặn request download
+    }
+    return true; // Cho phép load bình thường
   };
 
   return (
@@ -137,15 +122,23 @@ const PDFPreviewModal: React.FC<PDFPreviewModalProps> = ({
             style={styles.downloadButton}
             onPress={async () => {
               try {
-                if (localUri && (await Sharing.isAvailableAsync())) {
-                  await Sharing.shareAsync(localUri);
-                  Alert.alert("Thành công", "Đã tải file về: " + localUri);
-                } else {
-                  throw new Error("Local file not available");
+                const downloadPath =
+                  FileSystem.documentDirectory + (fileName || "document.pdf");
+                const downloadResumable = FileSystem.createDownloadResumable(
+                  safeFileUri,
+                  downloadPath,
+                  { headers: { "ngrok-skip-browser-warning": "true" } } // Thêm header
+                );
+                const result = await downloadResumable.downloadAsync();
+                if (result?.uri) {
+                  Alert.alert("Thành công", "Đã tải file về: " + result.uri);
+                  if (await Sharing.isAvailableAsync()) {
+                    await Sharing.shareAsync(result.uri);
+                  }
                 }
               } catch (error) {
-                console.error("❌ Lỗi khi chia sẻ PDF:", error);
-                Alert.alert("Lỗi", "Không thể chia sẻ file. Vui lòng thử lại.");
+                console.error("❌ Lỗi khi tải PDF:", error);
+                Alert.alert("Lỗi", "Không thể tải file. Vui lòng thử lại.");
               }
             }}
           >
@@ -155,7 +148,7 @@ const PDFPreviewModal: React.FC<PDFPreviewModalProps> = ({
             style={styles.shareButton}
             onPress={async () => {
               if (await Sharing.isAvailableAsync()) {
-                await Sharing.shareAsync(localUri || fileUri);
+                await Sharing.shareAsync(fileUri);
               }
             }}
           >
@@ -165,7 +158,7 @@ const PDFPreviewModal: React.FC<PDFPreviewModalProps> = ({
 
         {/* PDF Viewer */}
         <View style={styles.pdfContainer}>
-          {error || !localUri ? (
+          {error ? (
             <View style={styles.errorContainer}>
               <Ionicons name="document-text-outline" size={64} color="#ccc" />
               <Text style={styles.errorText}>Không thể hiển thị file PDF</Text>
@@ -174,7 +167,7 @@ const PDFPreviewModal: React.FC<PDFPreviewModalProps> = ({
                 onPress={() => {
                   setError(false);
                   setLoading(true);
-                  setLocalUri(null); // Trigger download lại
+                  setWebViewUrl(safeFileUri); // Reset về ngrok URL
                 }}
               >
                 <Text style={styles.retryText}>Thử lại</Text>
@@ -182,32 +175,76 @@ const PDFPreviewModal: React.FC<PDFPreviewModalProps> = ({
             </View>
           ) : (
             <WebView
-              source={{ uri: localUri }}
-              style={styles.webview}
+              ref={webViewRef}
+              source={{
+                uri: webViewUrl,
+                headers: {
+                  "ngrok-skip-browser-warning": "true",
+                  "User-Agent":
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                  Accept: "application/pdf,*/*",
+                  "Content-Type": "application/pdf",
+                },
+              }}
+              userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
               onLoadStart={() => setLoading(true)}
               onLoadEnd={() => setLoading(false)}
-              onError={(syntheticEvent) => {
-                console.error("WebView error:", syntheticEvent.nativeEvent);
-                handleError();
-              }}
-              onHttpError={(syntheticEvent) => {
-                console.error(
-                  "WebView HTTP error:",
-                  syntheticEvent.nativeEvent
-                );
-                handleError();
-              }}
+              onError={handleError}
+              onHttpError={handleError}
+              style={styles.webview}
               javaScriptEnabled={true}
               domStorageEnabled={true}
               startInLoadingState={true}
               allowsInlineMediaPlayback={true}
               allowFileAccess={true}
-              scalesPageToFit={true}
               renderLoading={() => (
                 <View style={styles.loadingContainer}>
                   <Text>Đang tải PDF...</Text>
                 </View>
               )}
+              onShouldStartLoadWithRequest={handleShouldStartLoadWithRequest}
+              onNavigationStateChange={(navState) => {
+                console.log("Current URL:", navState.url);
+                if (isNgrokWarningPage(navState.url)) {
+                  console.log("Detected ngrok warning, waiting for bypass...");
+                } else if (
+                  navState.url.includes("ngrok") &&
+                  !navState.url.includes("docs.google.com")
+                ) {
+                  // Đã bypass warning, chuyển sang Google Viewer
+                  console.log("Switching to Google Viewer:", googleViewerUrl);
+                  setWebViewUrl(googleViewerUrl);
+                }
+              }}
+              injectedJavaScript={`
+                (function() {
+                  function tryClickVisit() {
+                    const visitButton = document.querySelector('button[type="submit"], [data-testid="visit-site-button"], a[href*="ngrok-skip-browser-warning"]');
+                    if (visitButton) {
+                      visitButton.click();
+                      return true;
+                    }
+                    return false;
+                  }
+
+                  // Kiểm tra ngay lập tức
+                  tryClickVisit();
+
+                  // Retry mỗi 300ms trong 5 giây
+                  let retries = 15;
+                  const interval = setInterval(() => {
+                    if (tryClickVisit() || retries <= 0) {
+                      clearInterval(interval);
+                    }
+                    retries--;
+                  }, 300);
+
+                  // Observer cho DOM changes
+                  const observer = new MutationObserver(tryClickVisit);
+                  observer.observe(document.body, { childList: true, subtree: true });
+                })();
+                true;
+              `}
             />
           )}
         </View>
@@ -216,31 +253,103 @@ const PDFPreviewModal: React.FC<PDFPreviewModalProps> = ({
   );
 };
 
-// Custom hook để dùng trong chat app
-const usePDFViewer = () => {
-  const [visible, setVisible] = useState(false);
-  const [fileUri, setFileUri] = useState<string>("");
-  const [fileName, setFileName] = useState<string>("");
+// Main Hook
+export const usePDFViewer = () => {
+  const [pdfPreview, setPdfPreview] = useState<{
+    visible: boolean;
+    fileUri: string;
+    fileName: string;
+  }>({
+    visible: false,
+    fileUri: "",
+    fileName: "",
+  });
 
-  const openFile = (uri: string, name?: string) => {
-    setFileUri(uri);
-    setFileName(name || "Tệp PDF");
-    setVisible(true);
+  const openPdfWithSystemViewer = async (fileUri: string) => {
+    try {
+      const canOpen = await Linking.canOpenURL(fileUri);
+      if (canOpen) {
+        await Linking.openURL(fileUri);
+      } else {
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(fileUri);
+        } else {
+          alert("Thiết bị không hỗ trợ mở/chia sẻ file.");
+        }
+      }
+    } catch (error) {
+      console.error("Lỗi khi mở PDF:", error);
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri);
+      }
+    }
+  };
+
+  const openFile = async (
+    fileUrl: string | undefined,
+    fileName: string | undefined,
+    showPreview: boolean = true
+  ) => {
+    try {
+      const processedUrl = replaceLocalhost(fileUrl);
+
+      if (isPdfFile(fileName)) {
+        if (showPreview) {
+          // 👉 Không download, chỉ mở trực tiếp link preview
+          setPdfPreview({
+            visible: true,
+            fileUri: processedUrl!, // online preview link
+            fileName: fileName || "",
+          });
+        } else {
+          await openPdfWithSystemViewer(processedUrl!);
+        }
+        return;
+      }
+
+      // Với file khác (không phải PDF), mới tải về
+      const downloadPath = FileSystem.documentDirectory + (fileName || "file");
+      const downloadResumable = FileSystem.createDownloadResumable(
+        processedUrl!,
+        downloadPath
+      );
+      const result = await downloadResumable.downloadAsync();
+
+      if (result?.uri && (await Sharing.isAvailableAsync())) {
+        await Sharing.shareAsync(result.uri);
+      }
+    } catch (error) {
+      console.error("❌ Lỗi khi mở file:", error);
+      Alert.alert("Lỗi", "Có lỗi xảy ra khi mở file.");
+    }
+  };
+
+  const closePdfPreview = () => {
+    setPdfPreview({
+      visible: false,
+      fileUri: "",
+      fileName: "",
+    });
   };
 
   const PDFPreviewComponent = () => (
     <PDFPreviewModal
-      visible={visible}
-      fileUri={fileUri}
-      fileName={fileName}
-      onClose={() => setVisible(false)}
+      visible={pdfPreview.visible}
+      fileUri={pdfPreview.fileUri}
+      fileName={pdfPreview.fileName}
+      onClose={closePdfPreview}
     />
   );
 
-  return { openFile, PDFPreviewComponent };
+  return {
+    openFile,
+    PDFPreviewComponent,
+    closePdfPreview,
+    isPreviewVisible: pdfPreview.visible,
+  };
 };
 
-// Styles (giữ nguyên như code gốc)
+// Styles
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -316,4 +425,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default usePDFViewer; // Giữ nguyên export
+export default usePDFViewer;

@@ -89,7 +89,7 @@ export class VoiceCallService {
   private webRTCInitialized: boolean = false;
   private webRTCInitializationPromise: Promise<void> | null = null;
 
-  // Configuration
+  // Configuration - Enhanced for better connectivity
   private config: RTCConfiguration = {
     iceServers: [
       { urls: "stun:stun.l.google.com:19302" },
@@ -101,7 +101,7 @@ export class VoiceCallService {
     iceTransportPolicy: "all",
     bundlePolicy: "max-bundle",
     rtcpMuxPolicy: "require",
-    iceCandidatePoolSize: 10,
+    iceCandidatePoolSize: 20, // Increased for better connectivity
   };
 
   // Event callbacks
@@ -434,8 +434,135 @@ export class VoiceCallService {
   }
 
   /**
-   * Test microphone access
+   * Filter ICE candidates to improve connectivity (adapted from test-app)
    */
+  private shouldFilterIceCandidate(candidate: RTCIceCandidate): string | false {
+    if (!candidate || !candidate.candidate) {
+      return "Invalid candidate";
+    }
+
+    // Parse candidate string to extract details
+    const candidateStr = candidate.candidate;
+    const parts = candidateStr.split(' ');
+    
+    if (parts.length < 6) {
+      return "Malformed candidate string";
+    }
+
+    const address = parts[4];
+    const port = parseInt(parts[5]);
+    const type = parts[7]; // typ host/srflx/relay
+
+    // Critical: Filter out port 9 (discard protocol) - always blocked by firewall
+    if (port === 9) {
+      return `Port 9 (discard protocol) - blocked by firewall`;
+    }
+
+    // Filter out reserved ports (1-1024) except common ones
+    if (port && port <= 1024 && port !== 80 && port !== 443) {
+      return `Reserved port ${port} - likely blocked`;
+    }
+
+    // Filter out localhost
+    if (address === '127.0.0.1' || address === '::1') {
+      return `Localhost ${address} - not routable`;
+    }
+
+    // Filter out link-local addresses
+    if (address.startsWith('169.254.')) {
+      return `Link-local ${address} - limited connectivity`;
+    }
+
+    // Log useful LAN candidates
+    if (type === 'host' && 
+        (address.startsWith('192.168.') || address.startsWith('10.') || 
+         (address.startsWith('172.') && this.isValidPrivateIP(address)))) {
+      this.log("debug", `✅ Good LAN candidate: ${type} ${address}:${port}`);
+    }
+
+    return false; // Don't filter
+  }
+
+  /**
+   * Check if IP is valid private IP (not virtual interface)
+   */
+  private isValidPrivateIP(ip: string): boolean {
+    if (!ip.startsWith('172.')) return true;
+    const parts = ip.split('.');
+    const secondOctet = parseInt(parts[1]);
+    // 172.16.0.0 to 172.31.255.255 are valid private IPs
+    // but 172.17-31.x.x are often Docker/WSL virtual interfaces
+    return secondOctet >= 16 && secondOctet <= 31;
+  }
+
+  /**
+   * Enhanced error handling for microphone testing (adapted from test-app)
+   */
+  private enhancedMicrophoneErrorGuidance(error: Error): string {
+    const errorMsg = error.message.toLowerCase();
+    
+    if (errorMsg.includes('permission denied') || errorMsg.includes('notallowed')) {
+      return `🎤 Microphone Access Denied:
+• Go to device Settings → Apps → [Your App] → Permissions → Enable Microphone
+• For development: Check if localhost/debug permissions are enabled
+• Try restarting the app after enabling permissions`;
+    }
+    
+    if (errorMsg.includes('notfound') || errorMsg.includes('no audio')) {
+      return `🎤 No Microphone Found:
+• Check if microphone is properly connected
+• Try using wired headphones with mic
+• For simulators: Use physical device for testing`;
+    }
+    
+    if (errorMsg.includes('busy') || errorMsg.includes('already in use')) {
+      return `🎤 Microphone Busy:
+• Close other apps using microphone (camera, voice recorder)
+• Force-close and restart this app
+• Check if another call is in progress`;
+    }
+    
+    return `🎤 Microphone Error: ${error.message}
+• Try restarting the app
+• Check device audio settings
+• Use physical device for testing`;
+  }
+
+  /**
+   * Basic SDP validation for debugging (adapted from test-app)
+   */
+  private validateSDP(sdp: string, type: 'offer' | 'answer'): boolean {
+    if (!sdp || sdp.trim().length === 0) {
+      this.log("error", `❌ Empty SDP ${type}`);
+      return false;
+    }
+
+    // Check for required lines
+    const hasVersion = sdp.includes('v=0');
+    const hasOrigin = sdp.includes('o=');
+    const hasSession = sdp.includes('s=');
+    const hasTime = sdp.includes('t=');
+    
+    if (!hasVersion || !hasOrigin || !hasSession || !hasTime) {
+      this.log("error", `❌ Invalid SDP ${type} - missing required fields`);
+      return false;
+    }
+
+    // Check for media sections
+    const hasAudio = sdp.includes('m=audio');
+    const hasVideo = sdp.includes('m=video');
+    
+    if (!hasAudio && !hasVideo) {
+      this.log("error", `❌ SDP ${type} has no media sections`);
+      return false;
+    }
+
+    this.log("debug", `✅ SDP ${type} validation passed (audio: ${hasAudio}, video: ${hasVideo})`);
+    return true;
+  }
+
+  /**
+   * Initialize peer connection with enhanced configuration
   async testMicrophone(): Promise<boolean> {
     try {
       this.log("info", "Testing microphone access...");
@@ -589,8 +716,9 @@ export class VoiceCallService {
         return stream;
       }
     } catch (error) {
-      this.log("error", `getUserMedia failed: ${error}`);
-      throw error;
+      const guidance = this.enhancedMicrophoneErrorGuidance(error as Error);
+      this.log("error", `getUserMedia failed: ${guidance}`);
+      throw new Error(guidance);
     }
   }
   private async ensureAudioTracksEnabled(): Promise<void> {
@@ -678,6 +806,11 @@ export class VoiceCallService {
         offerToReceiveVideo: false,
       });
 
+      // Validate SDP before sending
+      if (!this.validateSDP(offer.sdp || '', 'offer')) {
+        throw new Error('Invalid SDP offer generated');
+      }
+
       await this.peerConnection!.setLocalDescription(offer);
 
       this.socket!.emit("call:initiate", {
@@ -729,6 +862,11 @@ export class VoiceCallService {
         offerToReceiveAudio: true,
         offerToReceiveVideo: true,
       });
+
+      // Validate SDP before sending
+      if (!this.validateSDP(offer.sdp || '', 'offer')) {
+        throw new Error('Invalid SDP offer generated');
+      }
 
       await this.peerConnection!.setLocalDescription(offer);
 
@@ -793,6 +931,11 @@ export class VoiceCallService {
       await this.flushRemoteIceCandidateQueue();
 
       const answer = await this.peerConnection!.createAnswer();
+
+      // Validate SDP before sending
+      if (!this.validateSDP(answer.sdp || '', 'answer')) {
+        throw new Error('Invalid SDP answer generated');
+      }
 
       await this.peerConnection!.setLocalDescription(answer);
 
@@ -1076,6 +1219,15 @@ export class VoiceCallService {
         return;
       }
       if (event.candidate) {
+        // Filter candidates for better connectivity
+        const filterResult = this.shouldFilterIceCandidate(event.candidate);
+        if (filterResult) {
+          this.log("debug", `🚫 Filtered candidate: ${filterResult}`);
+          return; // Skip sending this candidate
+        }
+
+        this.log("debug", `📤 Sending ICE candidate: ${event.candidate.candidate.substring(0, 50)}...`);
+        
         if (this.currentCallId) {
           this.socket!.emit("call:ice_candidate", {
             callId: this.currentCallId,
@@ -1084,6 +1236,8 @@ export class VoiceCallService {
         } else {
           this.iceCandidateQueue.push(event.candidate);
         }
+      } else {
+        this.log("debug", "🏁 ICE gathering complete");
       }
     };
 
@@ -1091,6 +1245,7 @@ export class VoiceCallService {
       if (!this.peerConnection) {
         return;
       }
+      console.log("ICE state:", this.peerConnection?.iceConnectionState);
       const state = this.peerConnection.iceConnectionState;
       this.log("info", `ICE connection state: ${state}`);
 
