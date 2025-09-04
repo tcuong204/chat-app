@@ -26,6 +26,25 @@ interface VoiceCallInterfaceProps {
   conversationId?: string;
 }
 
+// Add connection quality state
+interface ConnectionQuality {
+  level: "excellent" | "good" | "fair" | "poor";
+  rtt?: number;
+  packetLoss?: number;
+  bandwidth?: number;
+}
+
+interface WebRTCStats {
+  iceConnectionState: string;
+  signalingState: string;
+  localDescription?: string;
+  remoteDescription?: string;
+  bytesReceived?: number;
+  bytesSent?: number;
+  packetsLost?: number;
+  rtt?: number;
+}
+
 export const VoiceCallInterface: React.FC<VoiceCallInterfaceProps> = ({
   targetUserId,
   targetUserName,
@@ -47,6 +66,13 @@ export const VoiceCallInterface: React.FC<VoiceCallInterfaceProps> = ({
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeakerOn, setIsSpeakerOn] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  
+  // Enhanced features state
+  const [connectionQuality, setConnectionQuality] = useState<ConnectionQuality>({ level: "excellent" });
+  const [webrtcStats, setWebrtcStats] = useState<WebRTCStats | null>(null);
+  const [availableCameras, setAvailableCameras] = useState<any[]>([]);
+  const [showDebugInfo, setShowDebugInfo] = useState(false);
+  
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -66,10 +92,29 @@ export const VoiceCallInterface: React.FC<VoiceCallInterfaceProps> = ({
       setIsRemoteVideoEnabled(stream !== null);
     };
 
+    // Listen for connection quality changes
+    const handleConnectionQualityChanged = (quality: ConnectionQuality) => {
+      setConnectionQuality(quality);
+    };
+
+    // Listen for WebRTC stats updates
+    const handleWebRTCStatsUpdate = (stats: WebRTCStats) => {
+      setWebrtcStats(stats);
+    };
+
     voiceCallService.onRemoteStreamUpdate = handleRemoteStreamUpdate;
+    voiceCallService.onConnectionQualityChanged = handleConnectionQualityChanged;
+    voiceCallService.onWebRTCStatsUpdate = handleWebRTCStatsUpdate;
+
+    // Load available cameras for video calls
+    if (isVideo) {
+      loadAvailableCameras();
+    }
 
     return () => {
       voiceCallService.onRemoteStreamUpdate = null;
+      voiceCallService.onConnectionQualityChanged = null;
+      voiceCallService.onWebRTCStatsUpdate = null;
     };
   }, []);
 
@@ -270,6 +315,49 @@ export const VoiceCallInterface: React.FC<VoiceCallInterfaceProps> = ({
       setIsFrontCamera(!isFrontCamera);
     }
   };
+
+  // Load available cameras
+  const loadAvailableCameras = async () => {
+    try {
+      const cameras = await voiceCallService.getAvailableCameras();
+      setAvailableCameras(cameras);
+    } catch (error) {
+      console.log("Failed to load cameras:", error);
+    }
+  };
+
+  // Test camera function
+  const testCamera = async () => {
+    try {
+      await voiceCallService.testCamera();
+      Alert.alert("Success", "Camera test completed successfully");
+    } catch (error) {
+      Alert.alert("Camera Test Failed", (error as Error).message);
+    }
+  };
+
+  // Get connection quality color
+  const getQualityColor = () => {
+    switch (connectionQuality.level) {
+      case "excellent": return "#4CAF50";
+      case "good": return "#8BC34A";
+      case "fair": return "#FF9800";
+      case "poor": return "#F44336";
+      default: return "#9E9E9E";
+    }
+  };
+
+  // Get quality icon
+  const getQualityIcon = () => {
+    switch (connectionQuality.level) {
+      case "excellent": return "signal-cellular-3";
+      case "good": return "signal-cellular-2";
+      case "fair": return "signal-cellular-1";
+      case "poor": return "signal-cellular-outline";
+      default: return "signal-cellular-off";
+    }
+  };
+  
   console.log("rêrer", remoteStream);
   return (
     <SafeAreaProvider>
@@ -482,6 +570,46 @@ export const VoiceCallInterface: React.FC<VoiceCallInterfaceProps> = ({
                       />
                     </TouchableOpacity>
                   </>
+                )}
+              </View>
+            )}
+
+            {/* Debug Information Panel */}
+            {showDebugInfo && webrtcStats && (
+              <View style={styles.debugPanel}>
+                <Text style={styles.debugTitle}>Connection Stats</Text>
+                <Text style={styles.debugText}>ICE State: {webrtcStats.iceConnectionState}</Text>
+                <Text style={styles.debugText}>Signal State: {webrtcStats.signalingState}</Text>
+                {webrtcStats.rtt && (
+                  <Text style={styles.debugText}>RTT: {(webrtcStats.rtt * 1000).toFixed(0)}ms</Text>
+                )}
+                {webrtcStats.packetsLost !== undefined && (
+                  <Text style={styles.debugText}>Packets Lost: {webrtcStats.packetsLost}</Text>
+                )}
+                {webrtcStats.bytesReceived && (
+                  <Text style={styles.debugText}>
+                    Received: {(webrtcStats.bytesReceived / 1024).toFixed(1)} KB
+                  </Text>
+                )}
+                {webrtcStats.bytesSent && (
+                  <Text style={styles.debugText}>
+                    Sent: {(webrtcStats.bytesSent / 1024).toFixed(1)} KB
+                  </Text>
+                )}
+                <Text style={styles.debugText}>
+                  Quality: {connectionQuality.level}
+                  {connectionQuality.rtt && ` (${(connectionQuality.rtt * 1000).toFixed(0)}ms)`}
+                </Text>
+                
+                {availableCameras.length > 0 && (
+                  <View style={styles.debugSection}>
+                    <Text style={styles.debugSubtitle}>Available Cameras:</Text>
+                    {availableCameras.map((camera, index) => (
+                      <Text key={index} style={styles.debugText}>
+                        {camera.label} ({camera.facingMode})
+                      </Text>
+                    ))}
+                  </View>
                 )}
               </View>
             )}
@@ -738,5 +866,52 @@ const styles = StyleSheet.create({
   },
   activeButtonText: {
     color: "#4CAF50",
+  },
+  // Debug panel styles
+  debugPanel: {
+    position: "absolute",
+    top: 80,
+    left: 10,
+    right: 10,
+    backgroundColor: "rgba(0, 0, 0, 0.8)",
+    borderRadius: 10,
+    padding: 15,
+    maxHeight: 300,
+  },
+  debugTitle: {
+    color: "#4CAF50",
+    fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 10,
+  },
+  debugSubtitle: {
+    color: "#81C784",
+    fontSize: 14,
+    fontWeight: "600",
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  debugText: {
+    color: "#E0E0E0",
+    fontSize: 12,
+    marginVertical: 2,
+    fontFamily: "monospace",
+  },
+  debugSection: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.2)",
+  },
+  // Quality indicator styles
+  qualityIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 4,
+  },
+  qualityText: {
+    fontSize: 12,
+    marginLeft: 4,
+    textTransform: "capitalize",
   },
 });

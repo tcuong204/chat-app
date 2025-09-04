@@ -52,6 +52,24 @@ interface MediaPermissions {
   microphone: PermissionStatus;
 }
 
+interface ConnectionQuality {
+  level: "excellent" | "good" | "fair" | "poor";
+  rtt?: number;
+  packetLoss?: number;
+  bandwidth?: number;
+}
+
+interface WebRTCStats {
+  iceConnectionState: string;
+  signalingState: string;
+  localDescription?: string;
+  remoteDescription?: string;
+  bytesReceived?: number;
+  bytesSent?: number;
+  packetsLost?: number;
+  rtt?: number;
+}
+
 export class VoiceCallService {
   // WebRTC Components
   private peerConnection: RTCPeerConnection | null = null;
@@ -74,6 +92,8 @@ export class VoiceCallService {
   public isVideoCall: boolean = false;
   private isVideoEnabled: boolean = true;
   private currentFacingMode: "user" | "environment" = "user";
+  private availableCameras: CameraDevice[] = [];
+  private currentCameraDeviceId: string | null = null;
 
   // ICE Candidate Queues
   private iceCandidateQueue: RTCIceCandidate[] = [];
@@ -113,6 +133,12 @@ export class VoiceCallService {
   public onDebugUpdate: ((debugInfo: DebugInfo) => void) | null = null;
   public onRemoteStreamUpdate: ((stream: MediaStream | null) => void) | null =
     null;
+  public onConnectionQualityChanged: ((quality: ConnectionQuality) => void) | null = null;
+  public onWebRTCStatsUpdate: ((stats: WebRTCStats) => void) | null = null;
+
+  // Connection quality monitoring
+  private connectionQualityInterval: ReturnType<typeof setInterval> | null = null;
+  private webrtcStatsInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     this.setupAudioSession();
@@ -496,7 +522,7 @@ export class VoiceCallService {
   }
 
   /**
-   * Enhanced error handling for microphone testing (adapted from test-app)
+   * Basic SDP validation for debugging (adapted from test-app)
    */
   private enhancedMicrophoneErrorGuidance(error: Error): string {
     const errorMsg = error.message.toLowerCase();
@@ -1111,29 +1137,54 @@ export class VoiceCallService {
   }
 
   /**
-   * Get available cameras
+   * Get available cameras (enhanced version adapted from test-app)
    */
   async getAvailableCameras(): Promise<CameraDevice[]> {
     try {
+      this.log("debug", "Enumerating available cameras...");
+      
+      // Request permissions first
       const { status } = await Camera.requestCameraPermissionsAsync();
       if (status !== "granted") {
-        throw new Error("Camera permission denied");
+        throw new Error("Camera permission required to enumerate devices");
       }
 
-      // In React Native, camera enumeration is handled differently
-      // This is a simplified version - you might need platform-specific code
-      return [
+      // Try to enumerate using mediaDevices (may not work on all RN versions)
+      try {
+        const devices: any = await mediaDevices.enumerateDevices();
+        const cameras = devices.filter((device: any) => device.kind === 'videoinput');
+        
+        if (cameras.length > 0) {
+          // Map to our camera device format
+          this.availableCameras = cameras.map((device: any, index: number) => ({
+            deviceId: device.deviceId,
+            label: device.label || `Camera ${index + 1}`,
+            facingMode: this.inferFacingMode(device.label, index)
+          }));
+
+          this.log("success", `Found ${this.availableCameras.length} cameras via enumeration`);
+          return this.availableCameras;
+        }
+      } catch (enumerationError) {
+        this.log("debug", `Enumeration failed, using default cameras: ${enumerationError}`);
+      }
+
+      // Fallback to default front/back cameras for React Native
+      this.availableCameras = [
         {
           deviceId: "front",
           label: "Front Camera",
           facingMode: "user",
         },
         {
-          deviceId: "back",
+          deviceId: "back", 
           label: "Back Camera",
           facingMode: "environment",
         },
       ];
+
+      this.log("success", `Using default camera configuration (${this.availableCameras.length} cameras)`);
+      return this.availableCameras;
     } catch (error) {
       this.log("error", `Failed to get cameras: ${error}`);
       return [];
@@ -1141,19 +1192,47 @@ export class VoiceCallService {
   }
 
   /**
-   * Check media permissions
+   * Infer camera facing mode from device label
+   */
+  private inferFacingMode(label: string, index: number): "user" | "environment" | "unknown" {
+    const lowerLabel = label.toLowerCase();
+    
+    // Common patterns for front cameras
+    if (lowerLabel.includes('front') || lowerLabel.includes('user') || 
+        lowerLabel.includes('selfie') || lowerLabel.includes('facetime')) {
+      return 'user';
+    }
+    
+    // Common patterns for back cameras  
+    if (lowerLabel.includes('back') || lowerLabel.includes('rear') || 
+        lowerLabel.includes('environment') || lowerLabel.includes('main')) {
+      return 'environment';
+    }
+    
+    // Default assumption: first camera is usually front on mobile
+    if (index === 0) {
+      return 'user';
+    }
+    
+    return 'unknown';
+  }
+
+  /**
+   * Check media permissions (enhanced version)
    */
   async checkCameraPermissions(): Promise<MediaPermissions> {
     try {
-      const { status: cameraStatus } = await Camera.getCameraPermissionsAsync();
-      const { status: audioStatus } = await Audio.getPermissionsAsync();
+      const [audioStatus, cameraStatus] = await Promise.all([
+        Audio.getPermissionsAsync(),
+        Camera.getCameraPermissionsAsync()
+      ]);
 
       return {
-        camera: cameraStatus,
-        microphone: audioStatus,
+        microphone: audioStatus.status,
+        camera: cameraStatus.status
       };
     } catch (error) {
-      this.log("warning", `Permission check failed: ${error}`);
+      this.log("error", `Failed to check permissions: ${error}`);
       return {
         camera: "denied" as PermissionStatus,
         microphone: "denied" as PermissionStatus,
@@ -1162,30 +1241,235 @@ export class VoiceCallService {
   }
 
   /**
-   * Request media permissions
+   * Request media permissions (enhanced version)
    */
   async requestMediaPermissions(
     includeVideo: boolean = false
   ): Promise<boolean> {
     try {
+      this.log("info", `Requesting permissions (video: ${includeVideo})...`);
+
+      // Request audio permission
       const { status: audioStatus } = await Audio.requestPermissionsAsync();
       if (audioStatus !== "granted") {
+        this.log("error", "Microphone permission denied");
         return false;
       }
 
+      // Request camera permission if needed
       if (includeVideo) {
-        const { status: cameraStatus } =
-          await Camera.requestCameraPermissionsAsync();
+        const { status: cameraStatus } = await Camera.requestCameraPermissionsAsync();
         if (cameraStatus !== "granted") {
+          this.log("error", "Camera permission denied");
           return false;
         }
       }
 
+      this.log("success", "All permissions granted");
       return true;
     } catch (error) {
       this.log("error", `Permission request failed: ${error}`);
       return false;
     }
+  }
+
+  /**
+   * Test camera access (new method adapted from test-app)
+   */
+  async testCamera(): Promise<boolean> {
+    try {
+      this.log("info", "Testing camera access...");
+      
+      // Request permissions
+      const granted = await this.requestMediaPermissions(true);
+      if (!granted) {
+        throw new Error("Camera permissions not granted");
+      }
+
+      // Try to get camera stream briefly
+      const stream = await mediaDevices.getUserMedia({
+        video: { facingMode: this.currentFacingMode },
+        audio: false
+      });
+
+      // Stop the test stream immediately
+      stream.getTracks().forEach(track => track.stop());
+      
+      this.log("success", "Camera test completed successfully");
+      return true;
+    } catch (error) {
+      const guidance = this.enhancedCameraErrorGuidance(error as Error);
+      this.log("error", `Camera test failed: ${guidance}`);
+      throw new Error(guidance);
+    }
+  }
+
+  /**
+   * Enhanced camera error guidance (new method)
+   */
+  private enhancedCameraErrorGuidance(error: Error): string {
+    const errorMsg = error.message.toLowerCase();
+    
+    if (errorMsg.includes('permission denied') || errorMsg.includes('notallowed')) {
+      return `📷 Camera Access Denied:
+• Go to device Settings → Apps → [Your App] → Permissions → Enable Camera
+• For development: Check if localhost/debug permissions are enabled
+• Try restarting the app after enabling permissions`;
+    }
+    
+    if (errorMsg.includes('notfound') || errorMsg.includes('no video')) {
+      return `📷 No Camera Found:
+• Check if camera is not covered or damaged
+• Try switching between front/back camera
+• For simulators: Use physical device for testing`;
+    }
+    
+    if (errorMsg.includes('busy') || errorMsg.includes('already in use')) {
+      return `📷 Camera Busy:
+• Close other apps using camera (video, photo apps)
+• Force-close and restart this app
+• Check if another video call is in progress`;
+    }
+    
+    return `📷 Camera Error: ${error.message}
+• Try restarting the app
+• Check device camera settings
+• Use physical device for testing`;
+  }
+
+  /**
+   * Start connection quality monitoring (adapted from test-app)
+   */
+  private startConnectionMonitoring(): void {
+    if (!this.peerConnection) return;
+
+    // Monitor connection quality every 2 seconds
+    this.connectionQualityInterval = setInterval(async () => {
+      try {
+        const stats = await this.getWebRTCStats();
+        this.analyzeConnectionQuality(stats);
+        
+        if (this.onWebRTCStatsUpdate) {
+          this.onWebRTCStatsUpdate(stats);
+        }
+      } catch (error) {
+        this.log("debug", `Stats collection failed: ${error}`);
+      }
+    }, 2000);
+  }
+
+  /**
+   * Stop connection quality monitoring
+   */
+  private stopConnectionMonitoring(): void {
+    if (this.connectionQualityInterval) {
+      clearInterval(this.connectionQualityInterval);
+      this.connectionQualityInterval = null;
+    }
+    
+    if (this.webrtcStatsInterval) {
+      clearInterval(this.webrtcStatsInterval);
+      this.webrtcStatsInterval = null;
+    }
+  }
+
+  /**
+   * Get WebRTC connection statistics (adapted from test-app)
+   */
+  private async getWebRTCStats(): Promise<WebRTCStats> {
+    if (!this.peerConnection) {
+      return {
+        iceConnectionState: "disconnected",
+        signalingState: "closed"
+      };
+    }
+
+    const baseStats: WebRTCStats = {
+      iceConnectionState: this.peerConnection.iceConnectionState,
+      signalingState: this.peerConnection.signalingState,
+      localDescription: this.peerConnection.localDescription?.sdp?.substring(0, 100),
+      remoteDescription: this.peerConnection.remoteDescription?.sdp?.substring(0, 100)
+    };
+
+    try {
+      // Get detailed stats (may not be fully supported in react-native-webrtc)
+      const stats = await this.peerConnection.getStats();
+      
+      // Parse stats for useful information
+      if (stats && typeof stats.forEach === 'function') {
+        let bytesReceived = 0;
+        let bytesSent = 0;
+        let packetsLost = 0;
+        let rtt = 0;
+
+        stats.forEach((report: any) => {
+          if (report.type === 'inbound-rtp') {
+            bytesReceived += report.bytesReceived || 0;
+            packetsLost += report.packetsLost || 0;
+          } else if (report.type === 'outbound-rtp') {
+            bytesSent += report.bytesSent || 0;
+          } else if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+            rtt = report.currentRoundTripTime || 0;
+          }
+        });
+
+        return {
+          ...baseStats,
+          bytesReceived,
+          bytesSent,
+          packetsLost,
+          rtt
+        };
+      }
+    } catch (error) {
+      this.log("debug", `Detailed stats not available: ${error}`);
+    }
+
+    return baseStats;
+  }
+
+  /**
+   * Analyze connection quality based on stats
+   */
+  private analyzeConnectionQuality(stats: WebRTCStats): void {
+    let quality: ConnectionQuality = {
+      level: "excellent",
+      rtt: stats.rtt,
+      packetLoss: stats.packetsLost
+    };
+
+    // Analyze RTT (Round Trip Time)
+    if (stats.rtt) {
+      if (stats.rtt > 0.3) {
+        quality.level = "poor";
+      } else if (stats.rtt > 0.15) {
+        quality.level = "fair";
+      } else if (stats.rtt > 0.08) {
+        quality.level = "good";
+      }
+    }
+
+    // Analyze packet loss
+    if (stats.packetsLost && stats.packetsLost > 5) {
+      if (quality.level === "excellent") quality.level = "good";
+      if (stats.packetsLost > 15) quality.level = "poor";
+    }
+
+    // Analyze ICE connection state
+    if (stats.iceConnectionState === "disconnected" || 
+        stats.iceConnectionState === "failed") {
+      quality.level = "poor";
+    } else if (stats.iceConnectionState === "checking" || 
+               stats.iceConnectionState === "new") {
+      quality.level = "fair";
+    }
+
+    if (this.onConnectionQualityChanged) {
+      this.onConnectionQualityChanged(quality);
+    }
+
+    // Log quality changes
+    this.log("debug", `Connection quality: ${quality.level} (RTT: ${stats.rtt}ms, Packets lost: ${stats.packetsLost})`);
   }
 
   // Private helper methods...
@@ -1251,6 +1535,8 @@ export class VoiceCallService {
 
       if (state === "connected" || state === "completed") {
         this.callState = "active";
+        // Start connection monitoring when call becomes active
+        this.startConnectionMonitoring();
         this.notifyStateChange();
       } else if (state === "failed" || state === "disconnected") {
         this.cleanup();
@@ -1432,6 +1718,9 @@ export class VoiceCallService {
 
   private cleanup(): void {
     this.log("info", "Cleaning up call resources");
+
+    // Stop connection monitoring
+    this.stopConnectionMonitoring();
 
     if (this.localStream) {
       this.localStream.getTracks().forEach((track) => {

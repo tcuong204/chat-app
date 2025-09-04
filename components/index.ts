@@ -9,3 +9,4 @@ export { default as SearchModal } from "./searchModal";
 export { default as SecureImage } from "./secureImage";
 export { default as TabNavigation } from "./tabNavigation";
 export { VoiceCallInterface } from "./VoiceCallInterface";
+export { CallTestPanel } from "./CallTestPanel";
